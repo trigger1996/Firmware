@@ -31,58 +31,31 @@
 #
 ############################################################################
 
-px4_add_git_submodule(TARGET git_uavcan PATH "../uavcan/libuavcan")
-
-set(UAVCAN_USE_CPP03 ON CACHE BOOL "uavcan cpp03")
-set(UAVCAN_PLATFORM stm32 CACHE STRING "uavcan platform")
-
-string(TOUPPER "${OS}" OS_UPPER)
-add_definitions(
-		-DUAVCAN_CPP_VERSION=UAVCAN_CPP03
-		-DUAVCAN_MAX_NETWORK_SIZE_HINT=16
-		-DUAVCAN_MEM_POOL_BLOCK_SIZE=48
-		-DUAVCAN_NO_ASSERTIONS
-		-DUAVCAN_PLATFORM=stm32
-		-DUAVCAN_STM32_${OS_UPPER}=1
-		-DUAVCAN_STM32_NUM_IFACES=1
-		-DUAVCAN_STM32_TIMER_NUMBER=2
-		-DUAVCAN_USE_CPP03=ON
-		-DUAVCAN_USE_EXTERNAL_SNPRINT
-		)
-
-set(LIBUAVCAN_DIR ${PX4_SOURCE_DIR}/src/modules/uavcan/libuavcan)
-
-add_subdirectory(${LIBUAVCAN_DIR} uavcannode_libuavcan)
-add_dependencies(uavcan prebuild_targets)
-
-include_directories(${LIBUAVCAN_DIR}/libuavcan/include)
-include_directories(${LIBUAVCAN_DIR}/libuavcan/include/dsdlc_generated)
-include_directories(${LIBUAVCAN_DIR}/libuavcan_drivers/posix/include)
-include_directories(${LIBUAVCAN_DIR}/libuavcan_drivers/stm32/driver/include)
-
-include_directories(${PX4_SOURCE_DIR}/src/drivers/bootloaders)
+set(EXTRA_DEPENDS)
+if("${CONFIG_SHMEM}" STREQUAL "1")
+	set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PX4_SOURCE_DIR}/cmake/cmake_hexagon")
+	include(hexagon_sdk)
+	include_directories(${HEXAGON_SDK_INCLUDES})
+	include_directories(${PX4_BINARY_DIR}/platforms/posix)
+	list(APPEND SHMEM_SRCS
+		shmem_posix.c
+	)
+	# TODO: This didn't seem to be tracked correctly from posix_eagle_release.cmake
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCONFIG_SHMEM")
+	set(EXTRA_DEPENDS generate_px4muorb_stubs)
+endif()
 
 px4_add_module(
-	MODULE modules__uavcannode
-	MAIN uavcannode
-	STACK_MAIN 1048
+	MODULE platforms__posix__px4_layer
 	COMPILE_FLAGS
-		-Wframe-larger-than=1500
-		-Wno-deprecated-declarations
-		-O3
 	SRCS
-		uavcannode_main.cpp
-		indication_controller.cpp
-		sim_controller.cpp
-		led.cpp
-		resources.cpp
-		uavcannode_params.c
-
+		px4_posix_impl.cpp
+		px4_posix_tasks.cpp
+		px4_sem.cpp
+		lib_crc32.c
+		drv_hrt.c
+		${SHMEM_SRCS}
 	DEPENDS
-		prebuild_targets
-		uavcan
+		platforms__common
+		${EXTRA_DEPENDS}
 	)
-
-target_link_libraries(modules__uavcannode PUBLIC uavcan uavcan_stm32_driver)
-
-set_property(GLOBAL APPEND PROPERTY PX4_LIBRARIES uavcan_stm32_driver)

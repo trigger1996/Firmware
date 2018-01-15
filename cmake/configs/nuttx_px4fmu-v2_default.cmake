@@ -154,13 +154,6 @@ set(config_module_list
 	lib/version
 
 	#
-	# Platform
-	#
-	platforms/common
-	platforms/nuttx
-	platforms/nuttx/px4_layer
-
-	#
 	# OBC challenge
 	#
 	#examples/bottle_drop

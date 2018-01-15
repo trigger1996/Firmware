@@ -37,10 +37,10 @@
  *
  * @author Mark Charlebois <charlebm@gmail.com>
  */
+#include <common/work_queue/wqueue_test/wqueue_test.h>
 #include <px4_log.h>
 #include <px4_middleware.h>
 #include <px4_app.h>
-#include "wqueue_test.h"
 #include <stdio.h>
 
 int PX4_MAIN(int argc, char **argv)

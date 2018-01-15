@@ -1,7 +1,6 @@
-
 /****************************************************************************
  *
- *   Copyright (C) 2015 Mark Charlebois. All rights reserved.
+ *   Copyright (c) 2014 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,80 +32,26 @@
  ****************************************************************************/
 
 /**
- * @file wqueue_example.cpp
- * Example for Linux
+ * @file px4_nuttx_impl.cpp
  *
- * @author Mark Charlebois <charlebm@gmail.com>
+ * PX4 Middleware Wrapper NuttX Implementation
  */
 
-#include <px4_time.h>
-#include <px4_workqueue.h>
-#include "wqueue_test.h"
-#include <unistd.h>
-#include <stdio.h>
+#include <px4_defines.h>
+#include <px4_middleware.h>
+#include <drivers/drv_hrt.h>
 
-px4::AppState WQueueTest::appState;
-
-void WQueueTest::hp_worker_cb(void *p)
+namespace px4
 {
-	WQueueTest *wqep = (WQueueTest *)p;
 
-	wqep->do_hp_work();
+void init(int argc, char *argv[], const char *process_name)
+{
+	PX4_WARN("process: %s", process_name);
 }
 
-void WQueueTest::lp_worker_cb(void *p)
+uint64_t get_time_micros()
 {
-	WQueueTest *wqep = (WQueueTest *)p;
-
-	wqep->do_lp_work();
+	return hrt_absolute_time();
 }
 
-void WQueueTest::do_lp_work()
-{
-	static int iter = 0;
-	printf("done lp work\n");
-
-	if (iter > 5) {
-		_lpwork_done = true;
-	}
-
-	++iter;
-
-	work_queue(LPWORK, &_lpwork, (worker_t)&lp_worker_cb, this, 1000);
-}
-
-void WQueueTest::do_hp_work()
-{
-	static int iter = 0;
-	printf("done hp work\n");
-
-	if (iter > 5) {
-		_hpwork_done = true;
-	}
-
-	++iter;
-
-	// requeue
-	work_queue(HPWORK, &_hpwork, (worker_t)&hp_worker_cb, this, 1000);
-}
-
-int WQueueTest::main()
-{
-	appState.setRunning(true);
-
-	//Put work on HP work queue
-	work_queue(HPWORK, &_hpwork, (worker_t)&hp_worker_cb, this, 1000);
-
-
-	//Put work on LP work queue
-	work_queue(LPWORK, &_lpwork, (worker_t)&lp_worker_cb, this, 1000);
-
-
-	// Wait for work to finsh
-	while (!appState.exitRequested() && !(_hpwork_done && _lpwork_done)) {
-		printf("  Sleeping for 2 sec...\n");
-		sleep(2);
-	}
-
-	return 0;
 }

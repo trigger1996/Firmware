@@ -37,7 +37,7 @@
  * @author Thomas Gubler <thomasgubler@gmail.com>
  * @author Mark Charlebois <mcharleb@gmail.com>
  */
-#include "wqueue_test.h"
+#include <common/work_queue/wqueue_test/wqueue_test.h>
 #include <px4_app.h>
 #include <px4_log.h>
 #include <px4_tasks.h>

@@ -95,4 +95,3 @@ __EXPORT void px4_log_modulename(int level, const char *moduleName, const char *
 
 	}
 }
-

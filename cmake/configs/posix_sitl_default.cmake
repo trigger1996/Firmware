@@ -62,7 +62,6 @@ set(config_module_list
 	platforms/posix/tests/hrt_test
 	platforms/posix/tests/muorb
 	platforms/posix/tests/vcdev_test
-	platforms/posix/tests/wqueue
 
 	#
 	# General system control
@@ -131,13 +130,6 @@ set(config_module_list
 	lib/tailsitter_recovery
 	lib/terrain_estimation
 	lib/version
-
-	#
-	# Platform
-	#
-	platforms/common
-	platforms/posix/px4_layer
-	platforms/posix/work_queue
 
 	#
 	# OBC challenge

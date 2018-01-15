@@ -36,10 +36,12 @@ px4_add_module(
 	SRCS
 		module.cpp
 		px4_getopt.c
+		px4_log.c
 		shutdown.cpp
 	DEPENDS
 		prebuild_targets
 		uorb_headers
 		uorb_msgs
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix : 
+	
+add_subdirectory(work_queue)
