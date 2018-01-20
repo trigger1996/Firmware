@@ -42,6 +42,11 @@ set(NUTTX_DIR ${CMAKE_CURRENT_BINARY_DIR}/nuttx)
 set(NUTTX_CONFIG_DIR ${PX4_SOURCE_DIR}/platforms/nuttx/nuttx-configs)
 configure_file(${NUTTX_CONFIG_DIR}/Make.defs.in ${NUTTX_DIR}/Make.defs)
 
+# only in the cygwin environment: convert absolute paths used for Make.defs includes to mixed windows (C:/...)
+# because ARM GCC for Windows cannot take cygwin paths as parameter
+CYGPATH(NUTTX_DIR NUTTX_DIR_CYG)
+CYGPATH(PX4_SOURCE_DIR PX4_SOURCE_DIR_CYG)
+
 # copy nuttx to build directory
 file(RELATIVE_PATH CP_SRC ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/nuttx)
 file(RELATIVE_PATH CP_DST ${CMAKE_SOURCE_DIR} ${PX4_BINARY_DIR}/NuttX)
