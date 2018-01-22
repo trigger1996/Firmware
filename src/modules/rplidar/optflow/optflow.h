@@ -20,7 +20,7 @@ public:
 	~__optflow();
 
 	double vx, vy;
-	double x,  y;
+	//double x,  y;
 
 	int run(Mat raw, Mat raw_last, bool is_show);
 

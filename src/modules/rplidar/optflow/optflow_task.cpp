@@ -38,7 +38,8 @@ int __optflow::run(Mat raw, Mat raw_last, bool is_show)
 		//warnx("calculating optflow...");
 
 		// 这边不用标准的FarneBack，改用自己的代码
-		calcOptFlow_Dense(prevgray, gray, flow, 0.5, 2, 15, 3, 5, 1.2, 1);		// prevgray, gray, flow, 0.5, 3, 15, 3, 5, 1.2, 0
+		// prevgray, gray, flow, 0.5, 3, 15, 3, 5, 1.2, 0
+		calcOptFlow_Dense(prevgray, gray, flow, 0.5, 2, 10, 3, 5, 1.2, OPTFLOW_FARNEBACK_GAUSSIAN);		// prevgray, gray, flow, 0.5, 3, 15, 3, 5, 1.2, 0
 		cvtColor(prevgray, cflow, CV_GRAY2RGB);
 
 		// 归零数据，更新数据，准备滑动平均值滤波
@@ -91,8 +92,8 @@ int __optflow::run(Mat raw, Mat raw_last, bool is_show)
 		//cout << "Vx: " << vx << " " << "Vy: " << vy << endl;
 		//PX4_INFO("Vx: %5.5f, Vy: %5.5f \n", vx, vy);
 
-		x += vx;
-		y += vy;
+		//x += vx;
+		//y += vy;
 		//cout << "X: " << x << " " << "Y: " << y << endl << endl;
 		//PX4_INFO("X: %5.5f, Y: %5.5f \n", x, y);
 	}
@@ -103,7 +104,7 @@ int __optflow::run(Mat raw, Mat raw_last, bool is_show)
 
 __optflow::__optflow()
 {
-	x  = y  = 0.0f;
+	//x  = y  = 0.0f;
 	vx = vy = 0.0f;
 
 	vx_now = vx_pre = vx_last = 0.0f;

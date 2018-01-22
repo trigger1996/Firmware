@@ -50,6 +50,8 @@ int rplidar_thread_main(int argc, char *argv[])
 	// 处理对象
 	__lidar_driver lidar;
 	__optflow      optflow;
+	// 实际数据
+	double vx_dst, vy_dst;
 	// 飞机姿态订阅
 	int vehicle_att_sub_fd, sensor_combined_sub_fd;
 	struct vehicle_attitude_s vehicle_att;
@@ -102,9 +104,14 @@ int rplidar_thread_main(int argc, char *argv[])
 				current_AHRS.Yaw   = atan2(2 * (q1*q2 + q0*q3), q0*q0 + q1*q1 - q2*q2 - q3*q3) * 57.3f;	//yaw
 
 				// 测试代码
-				//warnx("Yaw: %f", current_AHRS.Yaw);
+				/// 机体坐标系和北东地坐标系类似，正前方X轴，正右方Y轴，正下方Z轴
+				/// 旋转正方向由右手定则确定，拇指朝向坐标轴正方向，四指方向为旋转正方向
+				//PX4_INFO("Roll:  %f", current_AHRS.Roll);
+				//PX4_INFO("Pitch: %f", current_AHRS.Pitch);
+				//PX4_INFO("Yaw:   %f", current_AHRS.Yaw);
 
 				/// 进行光流运算
+				/// 需要注意的是，图像的X是东西走向，Y是南北走向
 				lidar.draw_Frames(current_AHRS.Yaw);
 				optflow.run(lidar.raw, lidar.raw_last, false);
 
@@ -126,8 +133,8 @@ int rplidar_thread_main(int argc, char *argv[])
 						current_Acc.Z = sensor_raw.accelerometer_m_s2[2];
 
 
-						PX4_INFO("Ax: %f, Ay: %f", current_Acc.X,
-												   current_Acc.Y);
+						//PX4_INFO("Ax: %f, Ay: %f", current_Acc.X,
+						//						   current_Acc.Y);
 
 						// 获得时间，用于卡尔曼滤波器
 						t_last = t_now;
@@ -137,6 +144,14 @@ int rplidar_thread_main(int argc, char *argv[])
 							dt = t_now.tv_usec + 1000000 - t_last.tv_usec;
 						//PX4_INFO("t_now: %d", dt);
 
+						/// 卡尔曼滤波器
+						kalman_filter(optflow.vx,    optflow.vy,
+									  vx_dst,        vy_dst,
+									  current_Acc.X, current_Acc.Y,
+									  current_AHRS,  (double)dt / 1000);
+
+						PX4_INFO("Kalman: ");
+						PX4_INFO("Vx_Dst: %f, Vy_Dst: %f", vx_dst, vy_dst);
 
 					}
 				}
@@ -165,29 +180,60 @@ void kalman_filter(double vx_in,   double vy_in,
 	static double Px = 1, Py = 1;
 	static double Kx = 1, Ky = 1;
 
+	double a, b, c;
+	double temp;
+
 	const double F = 1;
 	const double H = 1;
 	const double I = 1;
 	const double Q = 0.05  * 0.05;
 	const double R = 0.005 * 0.005;
 
-	// 先归一化速度
-	//vy_in = vy_in * cos(ahrs.Pitch);		// 这里的速度是对地速度，要变成飞机坐标系方向的速度
-	//vx_in = vx_in * cos(ahrs.Roll);
+	/// 清零输出
+	vx_dst = vy_dst = 0;
 
-	Xx = F * Xx + acc_x * dt;
+	/// 处理时间
+	dt = dt / 1000;
+
+	/// 角度转弧度
+	a = ahrs.Roll  * PI / 180.0f;		// Roll
+	b = ahrs.Pitch * PI / 180.0f;		// Pitch
+	c = ahrs.Yaw   * PI / 180.0f;		// Yaw
+
+	/// 先归一化速度
+	/// 为什么前面要锁定yaw，这里再换算，这是因为光流会受到旋转的影响，如果前面不锁定虽然可以避免下面的步骤，但是噪声会非常大
+	/// 对调x, y速度，因为图像的x, y和实际相反
+	//  改代码的时候记得放到外面
+	temp = vx_in; vx_in = vy_in; vy_in = temp;
+	/// 对地速度->机体速度
+	vx_in = vx_in * (sin(a) * sin(c) - cos(a) * sin(b) * cos(c));
+	vy_in = vy_in * (sin(a) * cos(c) + cos(a) * sin(b) * sin(c));
+	/// 速度修正
+	// 这里先不修正
+	//vx_in = vx_in * cos(b);				// 注意这边乘以的是轴向的速度
+	//vy_in = vy_in * cos(a);
+
+	Xx = F * Xx + acc_x * 1000 * dt;
 	Px = F * Px + Q;
-	Kx = H * Px / (Px * H + R);
+	Kx = H * Px / (H * Px + R);
 	Xx = Xx + Kx * (vx_in - Xx * H);
 	Px = (I - Kx) * Px;
 
+	Xy = F * Xy + acc_y * 1000 * dt;
+	Py = F * Py + Q;
+	Ky = H * Py /  (H * Py + R);
+	Xy = Xy + Ky * (vy_in - Xy * H);
+	Py = (I - Ky) * Py;
+
+	vx_dst = Xx;
+	vy_dst = Xy;
+
 	// 首先看姿态角，如果倾斜的很厉害就不做计算了
-	if (ahrs.Pitch >= 5 * PI / 180.0f)
-	{
+	//if (ahrs.Pitch >= 5 * PI / 180.0f)
+	//{
+	//	vx_dst = vy_dst = 0;
+	//}
 
-	}
-
-	vx_dst = vy_dst = 0;
 
 }// void kalman_filter(..)
 
