@@ -89,12 +89,12 @@ int __optflow::run(Mat raw, Mat raw_last, bool is_show)
 		vy = (vy_now + vy_pre + vy_last) / 3;
 
 		//cout << "Vx: " << vx << " " << "Vy: " << vy << endl;
-		PX4_INFO("Vx: %5.5f, Vy: %5.5f \n", vx, vy);
+		//PX4_INFO("Vx: %5.5f, Vy: %5.5f \n", vx, vy);
 
 		x += vx;
 		y += vy;
 		//cout << "X: " << x << " " << "Y: " << y << endl << endl;
-		PX4_INFO("X: %5.5f, Y: %5.5f \n", x, y);
+		//PX4_INFO("X: %5.5f, Y: %5.5f \n", x, y);
 	}
 
 	return SUCCESS;

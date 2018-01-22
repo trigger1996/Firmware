@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stddef.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #include <rpi_config.h>
 #include <px4_config.h>
@@ -21,6 +22,7 @@
 #include <systemlib/err.h>
 
 #include <uORB/uORB.h>
+#include <uORB/topics/sensor_combined.h>
 #include <uORB/topics/vehicle_attitude.h>
 #include <poll.h>
 
@@ -30,6 +32,10 @@
 
 //#pragma GCC diagnostic ignored "-Wunused-function"
 
+void kalman_filter(double vx_in,   double vy_in,
+				   double &vx_dst, double &vy_dst,
+				   double acc_x,   double acc_y,
+				   __AHRS ahrs,    double dt);
 
 // daemon management function.
 extern "C" __EXPORT int rplidar_main(int argc, char *argv[]);

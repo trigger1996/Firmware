@@ -47,45 +47,55 @@ static int  rplidar_task;						/**< Handle of daemon task / thread */
 
 int rplidar_thread_main(int argc, char *argv[])
 {
-
+	// 处理对象
 	__lidar_driver lidar;
 	__optflow      optflow;
-	int vehicle_att_sub_fd;					// 飞机姿态
-	struct vehicle_attitude_s sensor;
-	static __AHRS current_AHRS = { 0.0f };
-
+	// 飞机姿态订阅
+	int vehicle_att_sub_fd, sensor_combined_sub_fd;
+	struct vehicle_attitude_s vehicle_att;
+	struct sensor_combined_s  sensor_raw;
+	static __AHRS  current_AHRS = { 0.0f };
+	static __Vec3f current_Acc  = { 0.0f };
+	// 订阅发布变量
 	px4_pollfd_struct_t fds;
 	int poll_ret;
+	// 时间变量
+	timeval t_now, t_last;
+	int dt;
 
 	lidar.init();
 
+	// 认为线程从这里开始
 	warnx("[rplidar] starting\n");
 	rplidar_running = true;
 
-	vehicle_att_sub_fd  = orb_subscribe(ORB_ID(vehicle_attitude));
+	// 准备订阅
+	vehicle_att_sub_fd     = orb_subscribe(ORB_ID(vehicle_attitude));
+	sensor_combined_sub_fd = orb_subscribe(ORB_ID(sensor_combined));
+	// 初始化时间
+	t_now = t_last = { 0 };
+	dt = 0;
 
 	while (!rplidar_should_exit) {
 
-
-		/// 订阅数据
-		// 姿态角
+		/// 有姿态角的时候再进行光流计算，其他时候睡觉
 		fds.fd = vehicle_att_sub_fd;
 		fds.events = POLLIN;
-		poll_ret = px4_poll(&fds, 1, 200);
+		poll_ret = px4_poll(&fds, 1, 50);
 		if (poll_ret > 0)
 		{
 			if (fds.revents & POLLIN)
 			{
 				orb_copy(ORB_ID(vehicle_attitude),
 						 vehicle_att_sub_fd,
-						 &sensor);
+						 &vehicle_att);
 
 				// 四元数换算欧垃角
 				float q0, q1, q2, q3;
-				q0 = sensor.q[0];
-				q1 = sensor.q[1];
-				q2 = sensor.q[2];
-				q3 = sensor.q[3];
+				q0 = vehicle_att.q[0];
+				q1 = vehicle_att.q[1];
+				q2 = vehicle_att.q[2];
+				q3 = vehicle_att.q[3];
 
 				current_AHRS.Pitch = asin(-2 * q1 * q3 + 2 * q0* q2)* 57.3f;	// pitch
 				current_AHRS.Roll  = atan2(2 * q2 * q3 + 2 * q0 * q1, -2 * q1 * q1 - 2 * q2* q2 + 1)* 57.3f;	// roll
@@ -94,15 +104,46 @@ int rplidar_thread_main(int argc, char *argv[])
 				// 测试代码
 				//warnx("Yaw: %f", current_AHRS.Yaw);
 
+				/// 进行光流运算
 				lidar.draw_Frames(current_AHRS.Yaw);
 				optflow.run(lidar.raw, lidar.raw_last, false);
 
+				/// 有加速度的时候才进行卡尔曼滤波计算，否则跳过这一步
+				fds.fd = sensor_combined_sub_fd;
+				fds.events = POLLIN;
+				poll_ret = px4_poll(&fds, 1, 50);
+				if (poll_ret > 0)
+				{
+					if (fds.revents & POLLIN)
+					{
+
+						orb_copy(ORB_ID(sensor_combined),
+								 sensor_combined_sub_fd,
+								 &sensor_raw);
+
+						current_Acc.X = sensor_raw.accelerometer_m_s2[0];
+						current_Acc.Y = sensor_raw.accelerometer_m_s2[1];
+						current_Acc.Z = sensor_raw.accelerometer_m_s2[2];
+
+
+						PX4_INFO("Ax: %f, Ay: %f", current_Acc.X,
+												   current_Acc.Y);
+
+						// 获得时间，用于卡尔曼滤波器
+						t_last = t_now;
+						gettimeofday(&t_now, NULL);
+						dt = t_now.tv_usec - t_last.tv_usec;
+						if (dt < 0)
+							dt = t_now.tv_usec + 1000000 - t_last.tv_usec;
+						//PX4_INFO("t_now: %d", dt);
+
+
+					}
+				}
+
 			}
 		}
-		else
-		{
-			warnx("Hello daemon!\n");
-		}
+
 
 		usleep(100000);
 	}
@@ -114,6 +155,41 @@ int rplidar_thread_main(int argc, char *argv[])
 	return 0;
 
 }// int rplidar_thread_main(int argc, char *argv[])
+
+void kalman_filter(double vx_in,   double vy_in,
+				   double &vx_dst, double &vy_dst,
+				   double acc_x,   double acc_y,
+				   __AHRS ahrs,    double dt)
+{
+	static double Xx = 0, Xy = 0;
+	static double Px = 1, Py = 1;
+	static double Kx = 1, Ky = 1;
+
+	const double F = 1;
+	const double H = 1;
+	const double I = 1;
+	const double Q = 0.05  * 0.05;
+	const double R = 0.005 * 0.005;
+
+	// 先归一化速度
+	//vy_in = vy_in * cos(ahrs.Pitch);		// 这里的速度是对地速度，要变成飞机坐标系方向的速度
+	//vx_in = vx_in * cos(ahrs.Roll);
+
+	Xx = F * Xx + acc_x * dt;
+	Px = F * Px + Q;
+	Kx = H * Px / (Px * H + R);
+	Xx = Xx + Kx * (vx_in - Xx * H);
+	Px = (I - Kx) * Px;
+
+	// 首先看姿态角，如果倾斜的很厉害就不做计算了
+	if (ahrs.Pitch >= 5 * PI / 180.0f)
+	{
+
+	}
+
+	vx_dst = vy_dst = 0;
+
+}// void kalman_filter(..)
 
 int rplidar_main(int argc, char *argv[])
 {
