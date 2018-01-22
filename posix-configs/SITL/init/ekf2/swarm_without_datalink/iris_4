@@ -47,8 +47,11 @@ param set SYS_RESTART_TYPE 2
 
 param set MAV_BROADCAST 1
 
+param set MAV_SYS_ID 64			# 飞机ID号，MAVLink的，jMAVSim仿真软件是根据这个来识别飞机的
+
+
 replay tryapplyparams
-simulator start -s
+simulator start -s -u 14563
 tone_alarm start
 gyrosim start
 accelsim start
@@ -64,22 +67,22 @@ ekf2 start
 mc_pos_control start
 mc_att_control start
 mixer load /dev/pwm_output0 ROMFS/px4fmu_common/mixers/quad_dc.main.mix
-mavlink start -u 14556 -r 4000000
-mavlink start -u 14557 -r 4000000 -m onboard -o 14540
-mavlink stream -r 50 -s POSITION_TARGET_LOCAL_NED -u 14556
-mavlink stream -r 50 -s LOCAL_POSITION_NED -u 14556
-mavlink stream -r 50 -s GLOBAL_POSITION_INT -u 14556
-mavlink stream -r 50 -s ATTITUDE -u 14556
-mavlink stream -r 50 -s ATTITUDE_QUATERNION -u 14556
-mavlink stream -r 50 -s ATTITUDE_TARGET -u 14556
-mavlink stream -r 50 -s SERVO_OUTPUT_RAW_0 -u 14556
-mavlink stream -r 20 -s RC_CHANNELS -u 14556
-mavlink stream -r 250 -s HIGHRES_IMU -u 14556
-mavlink stream -r 10 -s OPTICAL_FLOW_RAD -u 14556
+mavlink start -u 14558 -r 4000000
+mavlink start -u 14559 -r 4000000 -m onboard -o 14540
+mavlink stream -r 50 -s POSITION_TARGET_LOCAL_NED -u 14558
+mavlink stream -r 50 -s LOCAL_POSITION_NED -u 14558
+mavlink stream -r 50 -s GLOBAL_POSITION_INT -u 14558
+mavlink stream -r 50 -s ATTITUDE -u 14558
+mavlink stream -r 50 -s ATTITUDE_QUATERNION -u 14558
+mavlink stream -r 50 -s ATTITUDE_TARGET -u 14558
+mavlink stream -r 50 -s SERVO_OUTPUT_RAW_0 -u 14558
+mavlink stream -r 20 -s RC_CHANNELS -u 14558
+mavlink stream -r 250 -s HIGHRES_IMU -u 14558
+mavlink stream -r 10 -s OPTICAL_FLOW_RAD -u 14558
 logger start -e -t
 mavlink boot_complete
 replay trystart
 
-rpi_socket start -p 2
+#rpi_socket start -p 4
 self_navigator start
 

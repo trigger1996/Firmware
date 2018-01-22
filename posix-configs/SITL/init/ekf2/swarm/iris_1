@@ -47,8 +47,10 @@ param set SYS_RESTART_TYPE 2
 
 param set MAV_BROADCAST 1
 
+param set MAV_SYS_ID 61			# 飞机ID号，MAVLink的，jMAVSim仿真软件是根据这个来识别飞机的，1号机61,2号机62，这样以此类推
+
 replay tryapplyparams
-simulator start -s
+simulator start -s -u 14560		# simulator的端口要注意也要修改
 tone_alarm start
 gyrosim start
 accelsim start
@@ -80,6 +82,6 @@ logger start -e -t
 mavlink boot_complete
 replay trystart
 
-rpi_socket start -p 2
+rpi_socket start -p 1			# 只有1-4可以开数据链，5号开始服务器就收不到了
 self_navigator start
 

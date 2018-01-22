@@ -120,10 +120,10 @@ set(config_module_list
 	#
 	# Vehicle Control
 	#
-	# modules/fw_att_control		# 这边屏蔽了固定翼和地面载具的控制，是因为编译的时候flash超了
-	# modules/fw_pos_control_l1
-	# modules/gnd_att_control
-	# modules/gnd_pos_control
+	modules/fw_att_control
+	modules/fw_pos_control_l1
+	modules/gnd_att_control
+	modules/gnd_pos_control
 	modules/mc_att_control
 	modules/mc_pos_control
 	modules/vtol_att_control
@@ -167,11 +167,6 @@ set(config_module_list
 	platforms/common
 	platforms/nuttx
 	platforms/nuttx/px4_layer
-
-	#
-	# 用户自增加
-	#
- 	modules/usart
 
 	#
 	# OBC challenge

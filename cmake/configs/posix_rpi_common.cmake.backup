@@ -62,15 +62,6 @@ set(config_module_list
 	modules/mc_pos_control
 	modules/vtol_att_control
 
-	#######
-	###
-	#
-	# 用户自增加
-	#
-	modules/self_navigator
-	modules/rpi_socket
-	modules/rplidar
-
 	#
 	# Library modules
 	#

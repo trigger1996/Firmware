@@ -80,11 +80,6 @@ set(config_module_list
 	modules/simulator
 	#modules/uavcan
 
-	# 用户自增加
-	modules/rpi_socket
-	modules/self_navigator
-	modules/rplidar
-
 	#
 	# Estimation modules
 	#
