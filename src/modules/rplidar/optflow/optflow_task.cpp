@@ -42,8 +42,8 @@ int __optflow::run(Mat raw, Mat raw_last, bool is_show)
 		cvtColor(prevgray, cflow, CV_GRAY2RGB);
 
 		// 归零数据，更新数据，准备滑动平均值滤波
-		vx_now = vx_pre = vx_last = 0;
-		vy_now = vy_pre = vy_last = 0;
+		vx_last = vx_pre; vx_pre = vx_now; vx_now = 0;
+		vy_last = vy_pre; vy_pre = vy_now; vy_now = 0;
 
 		int pt_eff_x, pt_eff_y;
 		vx = vy = 0;
@@ -84,18 +84,22 @@ int __optflow::run(Mat raw, Mat raw_last, bool is_show)
 			vy_now = vy_now * 4 / LidarImageScale;		// 比例尺换算
 		}
 
-		//cout << "Vx: " << vx << " " << "Vy: " << vy << endl;
-		PX4_INFO("Vx: %5.5f, Vy: %5.5f \n", vx_now, vy_now);
+		// 滑动平均值滤波速度，注意这边乘过比例了，是实际速度
+		vx = (vx_now + vx_pre + vx_last) / 3;
+		vy = (vy_now + vy_pre + vy_last) / 3;
 
-		x += vx_now;
-		y += vy_now;
+		//cout << "Vx: " << vx << " " << "Vy: " << vy << endl;
+		PX4_INFO("Vx: %5.5f, Vy: %5.5f \n", vx, vy);
+
+		x += vx;
+		y += vy;
 		//cout << "X: " << x << " " << "Y: " << y << endl << endl;
 		PX4_INFO("X: %5.5f, Y: %5.5f \n", x, y);
 	}
 
 	return SUCCESS;
 
-}// int __optflow::run()
+}// int __optflow::run(Mat raw, Mat raw_last, bool is_show)
 
 __optflow::__optflow()
 {
