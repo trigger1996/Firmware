@@ -1028,11 +1028,6 @@ then
 		fi
 	fi
 
-	#
-	# 用户自增加
-	#
-	usart start /dev/ttyS1
-
 # End of autostart
 fi
 
