@@ -144,14 +144,16 @@ int rplidar_thread_main(int argc, char *argv[])
 							dt = t_now.tv_usec + 1000000 - t_last.tv_usec;
 						//PX4_INFO("t_now: %d", dt);
 
+
+
 						/// 卡尔曼滤波器
 						kalman_filter(optflow.vx,    optflow.vy,
 									  vx_dst,        vy_dst,
 									  current_Acc.X, current_Acc.Y,
 									  current_AHRS,  (double)dt / 1000);
 
-						PX4_INFO("Kalman: ");
-						PX4_INFO("Vx_Dst: %f, Vy_Dst: %f", vx_dst, vy_dst);
+						//PX4_INFO("Before: Vx: %f, Vy: %f", optflow.vx, optflow.vy);
+						PX4_INFO("Kalman: Vx_Dst: %f, Vy_Dst: %f", vx_dst, vy_dst);
 
 					}
 				}
@@ -227,6 +229,9 @@ void kalman_filter(double vx_in,   double vy_in,
 
 	vx_dst = Xx;
 	vy_dst = Xy;
+
+	// 测试代码，输出卡尔曼增益
+	//PX4_INFO("Kalman Gain: Kx: %f, Ky: %f", Kx, Ky);
 
 	// 首先看姿态角，如果倾斜的很厉害就不做计算了
 	//if (ahrs.Pitch >= 5 * PI / 180.0f)
