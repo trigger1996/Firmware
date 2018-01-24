@@ -51,7 +51,8 @@ int rplidar_thread_main(int argc, char *argv[])
 	__lidar_driver lidar;
 	__optflow      optflow;
 	// 实际数据
-	double vx_dst, vy_dst;
+	double vx_dst, vy_dst;	// 速度
+	double x, y;			// 距离
 	// 飞机姿态订阅
 	int vehicle_att_sub_fd, sensor_combined_sub_fd;
 	struct vehicle_attitude_s vehicle_att;
@@ -145,7 +146,6 @@ int rplidar_thread_main(int argc, char *argv[])
 						//PX4_INFO("t_now: %d", dt);
 
 
-
 						/// 卡尔曼滤波器
 						kalman_filter(optflow.vx,    optflow.vy,
 									  vx_dst,        vy_dst,
@@ -153,7 +153,11 @@ int rplidar_thread_main(int argc, char *argv[])
 									  current_AHRS,  (double)dt / 1000);
 
 						//PX4_INFO("Before: Vx: %f, Vy: %f", optflow.vx, optflow.vy);
-						PX4_INFO("Kalman: Vx_Dst: %f, Vy_Dst: %f", vx_dst, vy_dst);
+						//PX4_INFO("Kalman: Vx_Dst: %f, Vy_Dst: %f", vx_dst, vy_dst);
+
+						/// 测出来的速度积分得到距离
+						x = x + vx_dst * dt;
+						y = y + vy_dst * dt;
 
 					}
 				}
@@ -178,6 +182,12 @@ void kalman_filter(double vx_in,   double vy_in,
 				   double acc_x,   double acc_y,
 				   __AHRS ahrs,    double dt)
 {
+	// 核心代码
+	// 输入单位:	速度v:	mm/s
+	//			加速度a:	mm/s^2
+	//			角度:	deg
+	//			时间:	ms
+
 	static double Xx = 0, Xy = 0;
 	static double Px = 1, Py = 1;
 	static double Kx = 1, Ky = 1;
@@ -211,9 +221,8 @@ void kalman_filter(double vx_in,   double vy_in,
 	vx_in = vx_in * (sin(a) * sin(c) - cos(a) * sin(b) * cos(c));
 	vy_in = vy_in * (sin(a) * cos(c) + cos(a) * sin(b) * sin(c));
 	/// 速度修正
-	// 这里先不修正
-	//vx_in = vx_in * cos(b);				// 注意这边乘以的是轴向的速度
-	//vy_in = vy_in * cos(a);
+	vx_in = vx_in * cos(b);				// 注意这边乘以的是轴向的速度
+	vy_in = vy_in * cos(a);
 
 	Xx = F * Xx + acc_x * 1000 * dt;
 	Px = F * Px + Q;
@@ -241,6 +250,8 @@ void kalman_filter(double vx_in,   double vy_in,
 
 
 }// void kalman_filter(..)
+
+
 
 int rplidar_main(int argc, char *argv[])
 {
@@ -296,5 +307,5 @@ void rp_task_usage(const char *reason)
 	}
 
 	warnx("usage: rplidar {start|stop|status} [-p <additional params>]\n\n");
-}
+}// void rp_task_usage(const char *reason)
 
