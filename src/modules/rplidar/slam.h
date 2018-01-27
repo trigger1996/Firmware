@@ -13,6 +13,8 @@
 #include <px4_tasks.h>
 #include <px4_posix.h>
 
+#include <rotation_mat.h>
+
 using namespace cv;
 
 class __slam

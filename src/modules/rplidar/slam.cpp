@@ -76,13 +76,15 @@ int  __slam::run()
 		double b = ahrs.Pitch * PI / 180.0f;		// Pitch
 		double c = ahrs.Yaw   * PI / 180.0f;		// Yaw
 
-		// 速度机体->对地速度
-		// 这边懒得想了，直接除就是反变换了
+		/// 速度机体->对地速度
 		// vx_gnd->对地北方速度
 		// vy_gnd->对地东方速度
-		double vx_gnd = vx_in * (sin(a) * sin(c) - cos(a) * sin(b) * cos(c));
-		double vy_gnd = vy_in * (sin(a) * cos(c) + cos(a) * sin(b) * sin(c));
-		// 这里的x, y不对，要对惯性系做个转换
+		//double vx_gnd = vx_in / (sin(a) * sin(c) - cos(a) * sin(b) * cos(c));
+		//double vy_gnd = vy_in / (sin(a) * cos(c) + cos(a) * sin(b) * sin(c));
+		double vx_gnd = 0, vy_gnd = 0;
+		rotation_mat_inv(vx_in, vy_in, 0, ahrs.Roll, ahrs.Pitch, ahrs.Yaw, &vx_gnd, &vy_gnd, NULL);
+
+		/// 速度积分得到距离
 		x = x + vy_gnd * dt;
 		y = y + vx_gnd * dt;
 
@@ -131,12 +133,14 @@ void __slam::kalman_filter()
 	/// 对调x, y速度，因为图像的x, y和实际相反
 	//  改代码的时候记得放到外面
 	temp = vx_in; vx_in = vy_in; vy_in = temp;
-	/// 对地速度->机体速度
-	vx_in = vx_in * (sin(a) * sin(c) - cos(a) * sin(b) * cos(c));
-	vy_in = vy_in * (sin(a) * cos(c) + cos(a) * sin(b) * sin(c));
-	/// 速度修正
+
+	/// 速度修正: 准对地速度->对地速度
 	vx_in = vx_in * cos(b);				// 注意这边乘以的是轴向的速度
 	vy_in = vy_in * cos(a);
+	/// 对地速度->机体速度
+	//vx_in = vx_in * (sin(a) * sin(c) - cos(a) * sin(b) * cos(c));
+	//vy_in = vy_in * (sin(a) * cos(c) + cos(a) * sin(b) * sin(c));
+	rotation_mat(vx_in, vy_in, 0, ahrs.Roll, ahrs.Pitch, ahrs.Yaw, &vx_in, &vy_in, NULL);
 
 	Xx = F * Xx + acc_x * 1000 * dt;
 	Px = F * Px + Q;
@@ -209,4 +213,6 @@ int __slam::update_Time()
 	return t;
 
 }// int __slam::update_Time()
+
+
 

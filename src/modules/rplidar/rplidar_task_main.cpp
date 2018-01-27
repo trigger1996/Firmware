@@ -153,7 +153,9 @@ int rplidar_thread_main(int argc, char *argv[])
 		usleep(50000);	// 100000us
 	}
 
+	/// 退出线程
 	warnx("[daemon] exiting.\n");
+	imwrite("slam.jpg", slam.Map);
 
 	rplidar_running = false;
 

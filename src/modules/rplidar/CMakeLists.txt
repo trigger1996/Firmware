@@ -39,6 +39,7 @@ set(OPTFLOW_SRCS
 set(SRCS
 	lidar_driver.cpp
 	slam.cpp
+	tools/rotation_mat.cpp
 	${OPTFLOW_SRCS}
 	)
 
@@ -67,6 +68,7 @@ include_directories(
 	${OPENCV_DIR}/include/
 	${RPLIDAR_INCLUDE_DIR}
 	optflow/
+	tools/
 	)
 
 link_libraries(
