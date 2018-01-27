@@ -38,6 +38,7 @@ set(OPTFLOW_SRCS
 
 set(SRCS
 	lidar_driver.cpp
+	slam.cpp
 	${OPTFLOW_SRCS}
 	)
 

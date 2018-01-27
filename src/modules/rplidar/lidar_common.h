@@ -27,15 +27,10 @@
 #include <poll.h>
 
 #include "lidar_driver.h"
+#include "slam.h"
 #include "optflow.h"
 
-
 //#pragma GCC diagnostic ignored "-Wunused-function"
-
-void kalman_filter(double vx_in,   double vy_in,
-				   double &vx_dst, double &vy_dst,
-				   double acc_x,   double acc_y,
-				   __AHRS ahrs,    double dt);
 
 // daemon management function.
 extern "C" __EXPORT int rplidar_main(int argc, char *argv[]);

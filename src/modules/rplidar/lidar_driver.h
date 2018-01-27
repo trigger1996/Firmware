@@ -28,6 +28,10 @@ public:
 
 	Mat raw, raw_last;
 
+	// 归一化数据
+	float Data_NArray[ANGLE_ALL];		// 归一化后的数据
+	float Data_NLast[ANGLE_ALL];		// 归一化后数据备份
+
 	int init();
 	int draw_Frames(int yaw);
 
@@ -40,11 +44,6 @@ private:
 	// 原始数据
 	vector<__scandot> Data;
 	float Scan_Speed;
-
-	// 归一化数据
-	float Data_NArray[ANGLE_ALL];		// 归一化后的数据
-	float Data_NLast[ANGLE_ALL];		// 归一化后数据备份
-
 
 	bool check_RPLIDARHealth();
 	int scan_Data();
