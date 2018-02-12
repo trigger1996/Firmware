@@ -141,7 +141,7 @@ int rplidar_thread_main(int argc, char *argv[])
 
 						slam.run();
 
-						PX4_INFO("Before: Vx: %f, Vy: %f", optflow.vx, optflow.vy);
+						//PX4_INFO("Before: Vx: %f, Vy: %f", optflow.vx, optflow.vy);
 						PX4_INFO("Kalman: Vx_Dst: %f, Vy_Dst: %f", slam.vx, slam.vy);
 					}
 				}
