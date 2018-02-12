@@ -1,5 +1,4 @@
-#include "slam.h"
-
+#include <slam.h>
 
 __slam::__slam()
 {
@@ -8,24 +7,32 @@ __slam::__slam()
 	Px = 1, Py = 1;
 	Kx = 1, Ky = 1;
 
-	// 初始化时间
-	t_now = t_last = { 0 };
-	dt = 0;
-
-	// 初始化地图
-	Mat zero(LidarImageHeight * 3, LidarImageWidth * 3, CV_8UC3, Scalar(0, 0, 0));		// 图片格式： BGR
-	Map = zero.clone();
-	zero.release();
-
-	memset(obstacle, 0, sizeof(float) * ANGLE_ALL);
+	x = y = 0;
+	yaw = 0;
 
 	x_pixel = y_pixel = 200;
 
-	// 更新标识位
-	is_basicdata_updated = false;
-	is_mapdata_updated = false;
+	Mat zero(Map_ImgHeight, Map_ImgWidth, CV_8UC3, Scalar(0, 0, 0));		// 图片格式： BGR
+	Map = zero.clone();
+	zero.release();
+
+	// 时间初始化
+#ifndef WIN32
+
+#else
+	t_now = t_last = 0;
+	dt = 0;
+#endif
 
 }// __slam::__slam()
+
+__slam::__slam(double yaw_initial)
+{
+	__slam();
+
+	yaw = yaw_initial;
+
+}// __slam::__slam(double yaw_initial)
 
 
 __slam::~__slam()
@@ -33,86 +40,103 @@ __slam::~__slam()
 
 }// __slam::~__slam()
 
-void __slam::update_Data(double vx_raw,   double vy_raw,
-						 double acc_x_in,   double acc_y_in,
-						 __AHRS ahrs_in)
+int __slam::run(vector<__scandot> in, double dx_in, double dy_in, double d_yaw_in,
+						double acc_x_in, double acc_y_in,
+						__AHRS ahrs_in)
 {
-	vx_in = vx_raw;
-	vy_in = vy_raw;
+	int stat;
 
-	acc_x = acc_x_in;
-	acc_y = acc_y_in;
-	ahrs  = ahrs_in;
+	update_Data(in, dx_in, dy_in, d_yaw_in);
+	update_QuadData(acc_x_in, acc_y_in, ahrs_in);
 
-	//PX4_INFO("SLAM: Pitch: %f, Roll: %f, Yaw: %f", ahrs.Pitch, ahrs.Roll, ahrs.Yaw);
+	stat = run();
 
-	// 更新时间
-	dt = (double)update_Time() / 1000.0f;
+	return stat;
 
-	is_basicdata_updated = true;
+}// int __slam::run(vector<__scandot> in, double dx_in, double dy_in, double d_yaw_in)
 
-}// void __slam::update_Data(..)
 
-void __slam::update_Obstacle(float data[])
+int __slam::run()
 {
-	int i;
+	///
+	/// 更新时间
+#ifndef WIN32
+	dt = (double)update_Time() / 1000;
+#else
+	dt = update_Time();
+#endif
 
-	for (i = 0; i < ANGLE_ALL; i++)
-		obstacle[i] = data[i];
+	///
+	/// 距离微元换速度
+	vx_in = dx * dt / 1000.0f; vy_in = dy * dt / 1000.0f;					// ICP算法只能得到x和y的微元，并不是严格的速度，这里要换算速度
 
-	is_mapdata_updated = true;
+	///
+	/// 调用卡尔曼滤波器
+	//TODO: kalman_filter();
 
-}// void __slam::update_Obstacle(double data[])
+	///
+	/// 积分得到位置
+	//  角度转弧度
+	double a = ahrs.Roll   * PI / 180.0f;		// Roll
+	double b = ahrs.Pitch * PI / 180.0f;		// Pitch
+	double c = ahrs.Yaw   * PI / 180.0f;		// Yaw
 
-int  __slam::run()
-{
-	if (is_basicdata_updated == true)
-	{
-		kalman_filter();
+	///
+	/// 偏航角互补滤波
+	//  其实只要图像畸变不是那么厉害，这些数据还是能用的
+	const double ky1 = 0.85f;
+	const double ky2 = 0.15f;
+	yaw = yaw + d_yaw;								// 积分
+																//  偏航角范围: -180~179
+	while (yaw >= 2 * PI)							// 如果大于2*PI则要不停地减，直到减到2*PI以内
+		yaw -= 2 * PI;
+	while (yaw <= -2 * PI)							// 反之，如果小于则要不停的加，直到加到-2*PI以内
+		yaw += 2 * PI;
+	if (yaw >= PI)										// 如果大于PI(180度)，则要变成负的
+		yaw -= 2 * PI;
+	else if (yaw <= -PI)								// 如果小于PI，则要变成正的
+		yaw += 2 * PI;
+	// 互补滤波器
+	//TODO: yaw = ahrs.Yaw * ky1 + yaw * ky2;		// 在仿真的时候这个要注释掉，不然会导致偏航角异常，因为根本没有实际的IMU输入
 
-		/// 积分得到位置
-		//  角度转弧度
-		double a = ahrs.Roll  * PI / 180.0f;		// Roll
-		double b = ahrs.Pitch * PI / 180.0f;		// Pitch
-		double c = ahrs.Yaw   * PI / 180.0f;		// Yaw
+	///
+	/// 速度机体->对地速度
+	// vx_gnd->对地北方速度
+	// vy_gnd->对地东方速度
+	//double vx_gnd = vx_in / (sin(a) * sin(c) - cos(a) * sin(b) * cos(c));
+	//double vy_gnd = vy_in / (sin(a) * cos(c) + cos(a) * sin(b) * sin(c));
+	double vx_gnd = 0, vy_gnd = 0;
+	double z_out_temp = 0;
+	//TODO: rotation_mat_inv(vx_in, vy_in, 0, ahrs.Roll, ahrs.Pitch, ahrs.Yaw, &vx_gnd, &vy_gnd, &z_out_temp);
 
-		/// 速度机体->对地速度
-		// vx_gnd->对地北方速度
-		// vy_gnd->对地东方速度
-		//double vx_gnd = vx_in / (sin(a) * sin(c) - cos(a) * sin(b) * cos(c));
-		//double vy_gnd = vy_in / (sin(a) * cos(c) + cos(a) * sin(b) * sin(c));
-		double vx_gnd = 0, vy_gnd = 0;
-		rotation_mat_inv(vx_in, vy_in, 0, ahrs.Roll, ahrs.Pitch, ahrs.Yaw, &vx_gnd, &vy_gnd, NULL);
+	///
+	/// 速度积分得到位移
+	x = x + dx;										// 积分
+	y = y + dy;										// 积分
+	//TODO:x = x + vy_gnd * dt;
+	//TODO:y = y + vx_gnd * dt;
 
-		/// 速度积分得到距离
-		x = x + vy_gnd * dt;
-		y = y + vx_gnd * dt;
 
-		is_basicdata_updated = false;
-	}
+	///
+	/// 作图
+	x_pixel =	y	* Map_ImgScale + x_pixel_bias;
+	y_pixel =	-x	* Map_ImgScale + y_pixel_bias;
 
-	if (is_mapdata_updated == true)
-	{
+	draw_Map(true);
 
-		x_pixel = x * LidarImageScale + x_pixel_bias;
-		y_pixel = y * LidarImageScale + y_pixel_bias;
-
-		draw_Map(false);
-
-		is_mapdata_updated = false;
-	}
-
+	cout << "dt: " << dt << endl;
+	cout << "x: " << x << " y: " << y << " yaw: " << yaw * 180.0f / PI << endl;
 	return SUCCESS;
 
-}// int  __slam::run()
+}// int __slam::run()
 
 void __slam::kalman_filter()
 {
 	// 核心代码
-	// 输入单位:	速度v:	mm/s
-	//			加速度a:	mm/s^2
-	//			角度:	deg
-	//			时间:	ms
+	// 输入单位:	速度v:		mm/s
+	//				加速度a:	mm/s^2
+	//				角度:		deg
+	//				时间:		ms
 
 	double a, b, c;
 	double temp;
@@ -124,7 +148,7 @@ void __slam::kalman_filter()
 	dt = dt / 1000;
 
 	/// 角度转弧度
-	a = ahrs.Roll  * PI / 180.0f;		// Roll
+	a = ahrs.Roll  * PI / 180.0f;			// Roll
 	b = ahrs.Pitch * PI / 180.0f;		// Pitch
 	c = ahrs.Yaw   * PI / 180.0f;		// Yaw
 
@@ -140,7 +164,8 @@ void __slam::kalman_filter()
 	/// 对地速度->机体速度
 	//vx_in = vx_in * (sin(a) * sin(c) - cos(a) * sin(b) * cos(c));
 	//vy_in = vy_in * (sin(a) * cos(c) + cos(a) * sin(b) * sin(c));
-	rotation_mat(vx_in, vy_in, 0, ahrs.Roll, ahrs.Pitch, ahrs.Yaw, &vx_in, &vy_in, NULL);
+	double z_out_temp = 0;
+	//TODO:rotation_mat(vx_in, vy_in, 0, ahrs.Roll, ahrs.Pitch, ahrs.Yaw, &vx_in, &vy_in, &z_out_temp);
 
 	Xx = F * Xx + acc_x * 1000 * dt;
 	Px = F * Px + Q;
@@ -150,7 +175,7 @@ void __slam::kalman_filter()
 
 	Xy = F * Xy + acc_y * 1000 * dt;
 	Py = F * Py + Q;
-	Ky = H * Py /  (H * Py + R);
+	Ky = H * Py / (H * Py + R);
 	Xy = Xy + Ky * (vy_in - Xy * H);
 	Py = (I - Ky) * Py;
 
@@ -170,34 +195,72 @@ void __slam::kalman_filter()
 
 }// void __slam::kalman_filter()
 
-void __slam::draw_Map(bool is_show)
+int __slam::update_Data(vector<__scandot> in, double dx_in, double dy_in, double d_yaw_in)
 {
-	int x_pt, y_pt;
-	double theta, rho;
-	//int halfWidth  = Map.cols / 2;
-	//int halfHeight = Map.rows / 2;
+	int i;
 
-	for (unsigned int i = 0; i < ANGLE_ALL; i++)	// scan_data.size()
+	data.clear();
+	for (i = 0; i < in.size(); i++)
 	{
-
-		theta = i * PI / 180;
-		rho = obstacle[i];
-
-		x_pt = (int)(rho  * sin(theta) * LidarImageScale) + x_pixel;
-		y_pt = (int)(-rho * cos(theta) * LidarImageScale) + y_pixel;
-
-		if ((x_pt > 0 && x_pt < Map.cols) &&
-			(y_pt > 0 && y_pt < Map.rows))
-			circle(Map, Point(x_pt, y_pt), 2, Scalar(0, 125, 255), -1, 8, 0);
-
+		__scandot temp;
+		temp = in[i];
+		data.push_back(temp);
 	}
 
+	dx = dy_in, dy = -dx_in;		// 图像的x, y刚好和机体坐标系的x, y相反
+	d_yaw = d_yaw_in;
+
+	return SUCCESS;
+
+}// int __slam::update_Data(vector<__scandot> in, double dx_in, double dy_in, double d_yaw_in)
+
+int __slam::update_QuadData(double acc_x_in, double acc_y_in,
+							__AHRS ahrs_in)
+{
+
+	acc_x = acc_x_in;
+	acc_y = acc_y_in;
+	ahrs = ahrs_in;
+
+	//PX4_INFO("SLAM: Pitch: %f, Roll: %f, Yaw: %f", ahrs.Pitch, ahrs.Roll, ahrs.Yaw);
+
+	return SUCCESS;
+
+}// void __slam::update_Data(..)
+
+void __slam::draw_Map(bool is_show)
+{
+	double x_pt, y_pt;
+	double x_rot, y_rot;
+	double theta, rho;
+
+	for (unsigned int i = 0; i < data.size(); i++)	// scan_data.size()
+	{
+		__scandot dot;
+		dot = data[i];		// 未滤波:Data[i] 滤波后:data_dst[i]
+
+		rho = dot.Dst;
+		theta = dot.Angle * PI / 180;
+
+		x_pt = rho   * sin(theta) ;
+		y_pt = -rho * cos(theta) ;
+		// 角度旋转处理，用一个旋转矩阵
+		x_rot = x_pt *	cos(-yaw)	+ y * sin(-yaw);		// yaw已经是弧度了
+		y_rot = x_pt *	-sin(-yaw) + y * cos(-yaw);
+		x_rot = x_rot * Map_ImgScale + x_pixel;
+		y_rot = y_rot * Map_ImgScale + y_pixel;
+
+		circle(Map, Point((int)x_rot, (int)y_rot), 1, Scalar(0, 125, 255), -1, 8, 0);
+
+	}
 	if (is_show)
 		imshow("Slam Map", Map);
 
 }// void __slam::draw_Map()
 
-int __slam::update_Time()
+// 更新时间
+#ifndef WIN32
+double __slam::update_Time()
 {
 	// 获得时间
 	// 返回值单位: us
@@ -206,13 +269,25 @@ int __slam::update_Time()
 	t_last = t_now;
 	gettimeofday(&t_now, NULL);
 	t = t_now.tv_usec - t_last.tv_usec;
+
 	if (t < 0)
 		t = t_now.tv_usec + 1000000 - t_last.tv_usec;
+
 	//PX4_INFO("t_now: %d", dt);
+	return t;
+}// int __slam::update_Time()
+#else
+double __slam::update_Time()
+{
+	// http://blog.csdn.net/xpplearnc/article/details/53894048
+	// Windows C下如何获得毫秒/微秒级时间
+	double t = 0;
+
+	t_last = t_now;
+	t_now = (double)clock();
+	t = t_now - t_last;
 
 	return t;
 
-}// int __slam::update_Time()
-
-
-
+}// float __slam::update_Time()
+#endif

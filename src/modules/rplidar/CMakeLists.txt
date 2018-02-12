@@ -31,17 +31,23 @@
 #
 ############################################################################
 
-set(OPTFLOW_SRCS
-	optflow/optflow_task.cpp
-	optflow/farneback_simplified.cpp
-)
+set(OPENCV_DIR
+	    #/home/ghost/src/opencv/opencv-3.1.0/rpi_install
+		/usr/local
+		)
 
+# 文件目录
 set(SRCS
 	lidar_driver.cpp
+	icp_interface.cpp
 	slam.cpp
 	tools/rotation_mat.cpp
-	${OPTFLOW_SRCS}
 	)
+
+set(ICP_SRCS
+	icp_opencv/icp-opencv/icp.c
+	icp_opencv/third_party/kdtree/kdtree.c
+)
 
 set(RPLIDAR_SRCS
 	sdk/src/rplidar_driver.cpp
@@ -51,6 +57,7 @@ set(RPLIDAR_SRCS
 	sdk/src/hal/thread.cpp
 )
 
+# 包含目录
 set(RPLIDAR_INCLUDE_DIR
 	sdk/include/
 	sdk/src/
@@ -58,19 +65,22 @@ set(RPLIDAR_INCLUDE_DIR
 	sdk/src/hal/
 )
 
-set(OPENCV_DIR
-        #/home/ghost/src/opencv/opencv-3.1.0/rpi_install
-        /usr/local
-        )
+set(ICP_INCLUDE_DIR
+	    icp_opencv/icp-opencv/
+		icp_opencv/third_party/kdtree/
+		)
 
+# 总的包含目录
 include_directories(
 	/
 	${OPENCV_DIR}/include/
 	${RPLIDAR_INCLUDE_DIR}
-	optflow/
+	${ICP_INCLUDE_DIR}
+	include/
 	tools/
 	)
 
+# 链接库目录
 link_libraries(
         ${OPENCV_DIR}/lib/libopencv_calib3d.so
         ${OPENCV_DIR}/lib/libopencv_core.so
@@ -99,6 +109,7 @@ px4_add_module(
 	SRCS
 		rplidar_task_main.cpp
 		${RPLIDAR_SRCS}
+		${ICP_SRCS}
 		${SRCS}
 	DEPENDS
 		platforms__common

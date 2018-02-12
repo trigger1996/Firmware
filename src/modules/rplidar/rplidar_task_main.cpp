@@ -37,7 +37,7 @@
  *
  * @author Yiwei "Wraith" Zheng <529388771@qq.com>
  */
-#include "lidar_common.h"
+#include <rplidar_task_main.h>
 
 
 static bool rplidar_should_exit = false;		/**< daemon exit flag */
@@ -47,10 +47,12 @@ static int  rplidar_task;						/**< Handle of daemon task / thread */
 
 int rplidar_thread_main(int argc, char *argv[])
 {
+	int i = 1;
+
 	// 处理对象
-	__lidar_driver lidar;
-	__optflow      optflow;
-	__slam		   slam;
+	__lidar_driver	lidar;
+	__icp			icp;
+	__slam			slam;
 
 	// 飞机姿态订阅
 	int vehicle_att_sub_fd, sensor_combined_sub_fd;
@@ -107,10 +109,8 @@ int rplidar_thread_main(int argc, char *argv[])
 				//PX4_INFO("Pitch: %f", current_AHRS.Pitch);
 				//PX4_INFO("Yaw:   %f", current_AHRS.Yaw);
 
-				/// 进行光流运算
-				/// 需要注意的是，图像的X是东西走向，Y是南北走向
-				lidar.draw_Frames(current_AHRS.Yaw);
-				optflow.run(lidar.raw, lidar.raw_last, false);
+
+
 
 				/// 有加速度的时候才进行卡尔曼滤波计算，否则跳过这一步
 				fds.fd = sensor_combined_sub_fd;
@@ -120,7 +120,6 @@ int rplidar_thread_main(int argc, char *argv[])
 				{
 					if (fds.revents & POLLIN)
 					{
-
 						orb_copy(ORB_ID(sensor_combined),
 								 sensor_combined_sub_fd,
 								 &sensor_raw);
@@ -129,20 +128,16 @@ int rplidar_thread_main(int argc, char *argv[])
 						current_Acc.Y = sensor_raw.accelerometer_m_s2[1];
 						current_Acc.Z = sensor_raw.accelerometer_m_s2[2];
 
+						/// 使用ICP以后，不再锁定角度，所以这里可以等数据齐了以后计算
+						lidar.run();
+						icp.run(lidar.Data, false);
+						slam.run(lidar.Data, icp.dx, icp.dy, icp.d_yaw, 0, 0, { 0, 0, 0 });
 
-						//PX4_INFO("Ax: %f, Ay: %f", current_Acc.X,
-						//						   current_Acc.Y);
+						if (i % 25 == 0)
+							imwrite("slam.jpg", slam.Map);				// 50ms
 
-						/// 卡尔曼滤波器，以及作图
-						slam.update_Data(optflow.vx, optflow.vy,
-										 current_Acc.X, current_Acc.Y,
-										 current_AHRS);
-						slam.update_Obstacle(lidar.Data_NArray);
-
-						slam.run();
-
-						//PX4_INFO("Before: Vx: %f, Vy: %f", optflow.vx, optflow.vy);
-						PX4_INFO("Kalman: Vx_Dst: %f, Vy_Dst: %f", slam.vx, slam.vy);
+						i++;
+						waitKey(30);
 					}
 				}
 
@@ -150,13 +145,11 @@ int rplidar_thread_main(int argc, char *argv[])
 		}
 
 
-		usleep(50000);	// 100000us
+		//usleep(50000);	// 100000us
 	}
 
 	/// 退出线程
 	warnx("[daemon] exiting.\n");
-	imwrite("slam.jpg", slam.Map);
-
 	rplidar_running = false;
 
 	return 0;

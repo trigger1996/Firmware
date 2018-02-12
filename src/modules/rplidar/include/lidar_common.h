@@ -1,7 +1,8 @@
 #ifndef __RpLidar_H
 
-#define __Rplidar_H
+#define __RpLidar_H
 
+//#pragma GCC diagnostic ignored "-Wunused-function"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +10,9 @@
 #include <stddef.h>
 #include <unistd.h>
 #include <sys/time.h>
+
+#include <vector>
+#include <iostream>
 
 #include <rpi_config.h>
 #include <px4_config.h>
@@ -26,11 +30,16 @@
 #include <uORB/topics/vehicle_attitude.h>
 #include <poll.h>
 
-#include "lidar_driver.h"
-#include "slam.h"
-#include "optflow.h"
+#include <rplidar.h>
 
-//#pragma GCC diagnostic ignored "-Wunused-function"
+///
+/// SLAM使用的变量
+typedef struct {
+	_u8   Quality;
+	float Angle;
+	float Dst;
+
+} __scandot;
 
 // daemon management function.
 extern "C" __EXPORT int rplidar_main(int argc, char *argv[]);
@@ -42,5 +51,5 @@ int rplidar_thread_main(int argc, char *argv[]);
 void rp_task_usage(const char *reason);
 
 
-#endif	/* __Rplidar_H */
+#endif	/* __RpLidar_H */
 

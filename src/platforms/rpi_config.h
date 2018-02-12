@@ -9,7 +9,6 @@
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #pragma GCC diagnostic ignored "-Wmisleading-indentation"	// 高版本的GCC有缩进要求，低版本的没有，所以在交叉编译的时候记得注释这个而仿真的时候不用注释
 
-
 #include <iostream>
 
 //#include <opencv2/opencv.hpp>
@@ -120,7 +119,8 @@ enum Server_Cmd
 
 };
 
-
+///
+/// 飞机姿态变量
 //三维坐标结构体，浮点数组成，因为怕有的地方不能#include <Copter.h>
 typedef struct
 {
