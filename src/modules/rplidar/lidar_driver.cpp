@@ -30,7 +30,7 @@ int __lidar_driver::run()
 		}
 	} while (is_ok_times < is_ok_thereshold);
 
-	// 读取数据
+	// 作图
 	draw(Img, Data, (char *)"Raw", false);
 
 	waitKey(30);
@@ -71,15 +71,15 @@ int __lidar_driver::init()
 	}
 
 	if (!drv) {
-		fprintf(stderr, "insufficent memory, exit\n");
-		exit(-2);
+		PX4_ERR("insufficent memory, exit\n");
+		return -2;
 	}
 
 
 	// make connection...
 	if (IS_FAIL(drv->connect(opt_com_path, opt_com_baudrate))) {
-		fprintf(stderr, "Error, cannot bind to the specified serial port %s.\n"
-			, opt_com_path);
+		PX4_ERR("Error, cannot bind to the specified serial port %s.\n",
+				opt_com_path);
 
 		waitKey(0);
 		return -3;
@@ -107,9 +107,9 @@ bool __lidar_driver::check_RplidarHealth()
 
 	op_result = drv->getHealth(healthinfo);
 	if (IS_OK(op_result)) { // the macro IS_OK is the preperred way to judge whether the operation is succeed.
-		printf("RPLidar health status : %d\n", healthinfo.status);
+		PX4_INFO("RPLidar health status : %d\n", healthinfo.status);
 		if (healthinfo.status == RPLIDAR_STATUS_ERROR) {
-			fprintf(stderr, "Error, rplidar internal error detected. Please reboot the device to retry.\n");
+			PX4_ERR("Error, rplidar internal error detected. Please reboot the device to retry.\n");
 			// enable the following code if you want rplidar to be reboot by software
 			// drv->reset();
 			return false;
@@ -120,7 +120,7 @@ bool __lidar_driver::check_RplidarHealth()
 
 	}
 	else {
-		fprintf(stderr, "Error, cannot retrieve the lidar health code: %x\n", op_result);
+		PX4_ERR("Error, cannot retrieve the lidar health code: %x\n", op_result);
 		return false;
 	}
 }// bool __lidar_driver::check_RplidarHealth()
@@ -182,7 +182,7 @@ int __lidar_driver::draw(Mat &dst, vector<__scandot> data, char window_name[], b
 	}
 
 	//char s[35];
-	//sprintf_s(s, "Value Count: %d, Scan Speed: %0.2f", Data.size(), Scan_Speed);
+	//sprintf(s, "Value Count: %d, Scan Speed: %0.2f", Data.size(), Scan_Speed);
 	//putText(dst, s, Point(50, 50), 4, .5, Scalar(0, 0, 0), 2);
 
 	if (is_show)

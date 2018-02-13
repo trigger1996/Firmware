@@ -128,10 +128,10 @@ int __icp::run(bool is_show)
 	calc_dR_dYaw();
 
 	// 打印数据，显示结果
-	//printf("err = %f\n", err);
-	//cout << "dX: " << dx << " dY: " << dy << endl;
-	//cout << "d_yaw: " << d_yaw * 180.0f / PI << endl;
-	//cout << "R[0]: " << R[0] << " R[1]: " << R[1] << endl;
+	//PX4_INFO("err = %f", err);
+	//PX4_INFO("dx: %6.3f dy: %6.3f", dx, dy);
+	//PX4_INFO("d_yaw: %6.3f", d_yaw);
+	//PX4_INFO("R[0]: %6,3f, R[1]: %6.3f", R[0], R[1]);
 
 	return SUCCESS;
 

@@ -77,12 +77,20 @@ int rplidar_thread_main(int argc, char *argv[])
 	vehicle_att_sub_fd     = orb_subscribe(ORB_ID(vehicle_attitude));
 	sensor_combined_sub_fd = orb_subscribe(ORB_ID(sensor_combined));
 
+	///
+	/// 预先运行一次
+	// 预装数据
+	lidar.run();
+	icp.get_Pts(lidar.Data);
+	slam.update_Data(lidar.Data, 0, 0, 0);
+	slam.update_QuadData(0, 0, { 0, 0, 0 });
+
 	while (!rplidar_should_exit) {
 
 		/// 有姿态角的时候再进行光流计算，其他时候睡觉
 		fds.fd = vehicle_att_sub_fd;
 		fds.events = POLLIN;
-		poll_ret = px4_poll(&fds, 1, 50);
+		poll_ret = px4_poll(&fds, 1, 25);
 		if (poll_ret > 0)
 		{
 			if (fds.revents & POLLIN)
@@ -109,13 +117,10 @@ int rplidar_thread_main(int argc, char *argv[])
 				//PX4_INFO("Pitch: %f", current_AHRS.Pitch);
 				//PX4_INFO("Yaw:   %f", current_AHRS.Yaw);
 
-
-
-
 				/// 有加速度的时候才进行卡尔曼滤波计算，否则跳过这一步
 				fds.fd = sensor_combined_sub_fd;
 				fds.events = POLLIN;
-				poll_ret = px4_poll(&fds, 1, 50);
+				poll_ret = px4_poll(&fds, 1, 25);
 				if (poll_ret > 0)
 				{
 					if (fds.revents & POLLIN)
@@ -130,8 +135,10 @@ int rplidar_thread_main(int argc, char *argv[])
 
 						/// 使用ICP以后，不再锁定角度，所以这里可以等数据齐了以后计算
 						lidar.run();
-						icp.run(lidar.Data, false);
-						slam.run(lidar.Data, icp.dx, icp.dy, icp.d_yaw, 0, 0, { 0, 0, 0 });
+						icp.run(lidar.Data, true);
+						slam.run(lidar.Data, icp.dx, icp.dy, icp.d_yaw,
+								 current_Acc.X, current_Acc.Y,
+								 current_AHRS);
 
 						if (i % 25 == 0)
 							imwrite("slam.jpg", slam.Map);				// 50ms

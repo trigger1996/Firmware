@@ -9,7 +9,7 @@
 
 using namespace cv;
 
-#define Map_ImgSize			(LidarImageSize * 3)
+#define Map_ImgSize			(LidarImageSize * 1)		// (LidarImageSize * 3)
 #define Map_ImgWidth		Map_ImgSize
 #define Map_ImgHeight		Map_ImgSize
 #define Map_ImgScale		LidarImageScale
