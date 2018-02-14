@@ -76,6 +76,7 @@ int rplidar_thread_main(int argc, char *argv[])
 	icp.get_Pts(lidar.Data);
 	slam.update_Data(lidar.Data, 0, 0, 0);
 	slam.update_QuadData(m.Acc.X, m.Acc.Y, m.AHRS);
+	slam.yaw = m.AHRS.Yaw * PI / 180.0f;	// 给个初始值，对图像好
 
 	///
 	/// 认为线程从这里开始

@@ -2,14 +2,14 @@
 
 #define __SLAM_H
 
-#include <lidar_common.h>
 #include <rpi_config.h>
+#include <lidar_common.h>
 #include <rotation_mat.h>
 #include <opencv2/opencv.hpp>
 
 using namespace cv;
 
-#define Map_ImgSize			(LidarImageSize * 1)		// (LidarImageSize * 3)
+#define Map_ImgSize			(LidarImageSize * 1)
 #define Map_ImgWidth		Map_ImgSize
 #define Map_ImgHeight		Map_ImgSize
 #define Map_ImgScale		LidarImageScale
@@ -20,34 +20,12 @@ using namespace cv;
 	#include <time.h>
 #endif
 
-/*
-算法代码的注意事项:
-	1 数据刚到手立即归一化单位
-		距离:	mm
-		时间:	s
-		速度:	mm/s
-		加速度:	mm/s^2
-		角度:	deg
-
-	2 极性参考
-
-		3   1
-		 \ /
-		  X    ↑
-		 / \
-		2   4
-
-		x
-		↑
-		X→y
-	   z
-*/
-
 class __slam
 {
 public:
 
-	__slam(double yaw_initial = 0);
+	__slam();
+	__slam(double yaw_initial);
 	~__slam();
 
 	double x, y;
@@ -83,8 +61,8 @@ private:
 	const double F = 1;
 	const double H = 1;
 	const double I = 1;
-	const double Q = 0.05  * 0.05;
-	const double R = 0.005 * 0.005;
+	const double Q = 0.1  * 0.1;		// 0.05  * 0.05
+	const double R = 0.01 * 0.01;		// 0.005 * 0.005
 
 	/// 卡尔曼滤波器全局变量
 	double Xx, Xy;

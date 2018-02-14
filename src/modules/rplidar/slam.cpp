@@ -1,6 +1,6 @@
 #include <slam.h>
 
-__slam::__slam(double yaw_initial)
+__slam::__slam()
 {
 	// 卡尔曼滤波器全局变量
 	Xx = 0, Xy = 0;
@@ -8,9 +8,9 @@ __slam::__slam(double yaw_initial)
 	Kx = 1, Ky = 1;
 
 	x = y = 0;
-	yaw = yaw_initial;
+	yaw = 0;
 
-	x_pixel = y_pixel = 0;
+	x_pixel = y_pixel = Map_ImgSize / 2;
 
 	Mat zero(Map_ImgHeight, Map_ImgWidth, CV_8UC3, Scalar(0, 0, 0));		// 图片格式： BGR
 	Map = zero.clone();
@@ -24,7 +24,23 @@ __slam::__slam(double yaw_initial)
 	dt = 0;
 #endif
 
+}// __slam::__slam()
+
+__slam::__slam(double yaw_initial)
+{
+	__slam();
+
+	if (Map.empty())
+	{
+		Mat zero(Map_ImgHeight, Map_ImgWidth, CV_8UC3, Scalar(0, 0, 0));		// 图片格式： BGR
+		Map = zero.clone();
+		zero.release();
+	}
+
+	yaw = yaw_initial;
+
 }// __slam::__slam(double yaw_initial)
+
 
 __slam::~__slam()
 {
@@ -52,56 +68,46 @@ int __slam::run()
 	///
 	/// 更新时间
 #ifndef WIN32
-	dt = (double)update_Time() / 1000;	// ms
+	dt = (double)update_Time() / 1000;
 #else
-	dt = update_Time();					// ms
+	dt = update_Time();
 #endif
-	// 归一化单位
-	dt = dt / 1000;						// ms->s
+
+	///
+	///
+	dt = dt / 1000.0f;
 
 	///
 	/// 距离微元换速度
-	vx_in = dx / dt;
-	vy_in = dy / dt;					// ICP算法只能得到x和y的微元，并不是严格的速度，这里要换算速度
+	vx_in = dx / dt; vy_in = dy / dt;					// ICP算法只能得到x和y的微元，并不是严格的速度，这里要换算速度
 
 	///
 	/// 调用卡尔曼滤波器
 	kalman_filter();
 
 	///
-	/// 积分得到位置
-
-	///
 	/// 偏航角互补滤波
 	//  其实只要图像畸变不是那么厉害，这些数据还是能用的
 	const double ky1 = 0.85f;
 	const double ky2 = 0.15f;
-	yaw = yaw + d_yaw;						// 积分
-											// 偏航角范围: -180~179
-	while (yaw >= 2 * 180.0f)				// 如果大于2*PI则要不停地减，直到减到2*PI以内
-		yaw -= 2 * 180.0f;
-	while (yaw <= -2 * 180.0f)							// 反之，如果小于则要不停的加，直到加到-2*PI以内
-		yaw += 2 * 180.0f;
-	if (yaw >= 180.0f)										// 如果大于PI(180度)，则要变成负的
-		yaw -= 2 * 180.0f;
-	else if (yaw <= -180.0f)								// 如果小于PI，则要变成正的
-		yaw += 2 * 180.0f;
+	yaw = yaw + d_yaw;								// 积分
+																//  偏航角范围: -180~179
+	while (yaw >= 2 * PI)							// 如果大于2*PI则要不停地减，直到减到2*PI以内
+		yaw -= 2 * PI;
+	while (yaw <= -2 * PI)							// 反之，如果小于则要不停的加，直到加到-2*PI以内
+		yaw += 2 * PI;
+	if (yaw >= PI)										// 如果大于PI(180度)，则要变成负的
+		yaw -= 2 * PI;
+	else if (yaw <= -PI)								// 如果小于PI，则要变成正的
+		yaw += 2 * PI;
 	// 互补滤波器
-	yaw = ahrs.Yaw * ky1 + yaw * ky2;		// 在仿真的时候这个要注释掉，不然会导致偏航角异常，因为根本没有实际的IMU输入
+	yaw = ahrs.Yaw * PI / 180.0f * ky1 + yaw * ky2;		// 在仿真的时候这个要注释掉，不然会导致偏航角异常，因为根本没有实际的IMU输入
 
 	///
 	/// 速度机体->对地速度
-	// vx_gnd->对地北方速度
-	// vy_gnd->对地东方速度
-	//  角度转弧度
-	//double a = ahrs.Roll  * PI / 180.0f;		// Roll
-	//double b = ahrs.Pitch * PI / 180.0f;		// Pitch
-	//double c = ahrs.Yaw   * PI / 180.0f;		// Yaw
-	//double vx_gnd = vx_in / (sin(a) * sin(c) - cos(a) * sin(b) * cos(c));
-	//double vy_gnd = vy_in / (sin(a) * cos(c) + cos(a) * sin(b) * sin(c));
 	double vx_gnd = 0, vy_gnd = 0;
 	double z_out_temp = 0;
-	rotation_mat_inv(vx, vy, 0, ahrs.Roll, ahrs.Pitch, ahrs.Yaw, &vx_gnd, &vy_gnd, &z_out_temp);
+	rotation_mat_inv(vx_in, vy_in, 0, ahrs.Roll, ahrs.Pitch, ahrs.Yaw, &vx_gnd, &vy_gnd, &z_out_temp);
 
 	///
 	/// 速度积分得到位移
@@ -117,8 +123,8 @@ int __slam::run()
 
 	draw_Map(true);
 
-	PX4_INFO("x: %d, y: %d", x, y);
-	//PX4_INFO("X: %6.3f, Y: %6.3f", x, y);
+	PX4_INFO("acc_x: %f, acc_y: %f", vx_in, vy_in);
+	PX4_INFO("x: %f, y: %f", x, y);
 	return SUCCESS;
 
 }// int __slam::run()
@@ -126,10 +132,10 @@ int __slam::run()
 void __slam::kalman_filter()
 {
 	// 核心代码
-	// 输入单位:	速度v:		mm/s
-	//			加速度a:		mm/s^2
-	//			角度:		deg
-	//			时间:		ms
+	// 输入单位:		速度v:		mm/s
+	//				加速度a:		mm/s^2
+	//				角度:		deg
+	//				时间:		s
 
 	double a, b, c;
 	double temp;
@@ -138,10 +144,9 @@ void __slam::kalman_filter()
 	vx = vy = 0;
 
 	/// 角度转弧度
-	a	= ahrs.Roll		* PI / 180.0f;		// Roll
-	b	= ahrs.Pitch	* PI / 180.0f;		// Pitch
-	//c	= ahrs.Yaw		* PI / 180.0f;		// Yaw
-
+	a = ahrs.Roll  * PI / 180.0f;			// Roll
+	b = ahrs.Pitch * PI / 180.0f;		// Pitch
+	c = ahrs.Yaw   * PI / 180.0f;		// Yaw
 
 	/// 先归一化速度
 	/// 为什么前面要锁定yaw，这里再换算，这是因为光流会受到旋转的影响，如果前面不锁定虽然可以避免下面的步骤，但是噪声会非常大
@@ -170,7 +175,7 @@ void __slam::kalman_filter()
 	Xy = Xy + Ky * (vy_in - Xy * H);
 	Py = (I - Ky) * Py;
 
-	// 取出值
+	// 取出值，因为相对运动，所以这边要取负号
 	vx = Xx;
 	vy = Xy;
 
@@ -188,10 +193,6 @@ void __slam::kalman_filter()
 
 int __slam::update_Data(vector<__scandot> in, double dx_in, double dy_in, double d_yaw_in)
 {
-	// 输入单位:
-	//		dot:	mm
-	//		dx, dy:	mm
-	//		d_yaw:	rad
 	int i;
 
 	data.clear();
@@ -204,7 +205,6 @@ int __slam::update_Data(vector<__scandot> in, double dx_in, double dy_in, double
 
 	dx = dy_in, dy = -dx_in;		// 图像的x, y刚好和机体坐标系的x, y相反
 	d_yaw = d_yaw_in;
-	d_yaw = d_yaw * 180.0f / PI;
 
 	return SUCCESS;
 
@@ -213,15 +213,13 @@ int __slam::update_Data(vector<__scandot> in, double dx_in, double dy_in, double
 int __slam::update_QuadData(double acc_x_in, double acc_y_in,
 							__AHRS ahrs_in)
 {
-	// 输入:
-	// acc_x_in, acc_y_in:	m/s^2
-	// ahrs_in:				deg
-	acc_x = -acc_x_in;
-	acc_y = acc_y_in;
-	ahrs  = ahrs_in;
 
-	acc_x = acc_x * 1000.0f;
-	acc_y = acc_y * 1000.0f;
+	acc_x = acc_x_in;
+	acc_y = acc_y_in;
+	ahrs = ahrs_in;
+
+	acc_x = -acc_x * 1000.0f;
+	acc_y = acc_y  * 1000.0f;
 
 	//PX4_INFO("SLAM: Pitch: %f, Roll: %f, Yaw: %f", ahrs.Pitch, ahrs.Roll, ahrs.Yaw);
 
@@ -231,27 +229,38 @@ int __slam::update_QuadData(double acc_x_in, double acc_y_in,
 
 void __slam::draw_Map(bool is_show)
 {
-	int x_pt, y_pt;
+	double x_pt, y_pt;
+	double x_rot, y_rot;
 	double theta, rho;
-	//int halfWidth = Map.cols / 2;
-	//int halfHeight = Map.rows / 2;
 
-	for (unsigned int i = 0; i < data.size(); i++)
+	// 测试代码
+	//Mat zero(Map_ImgHeight, Map_ImgWidth, CV_8UC3, Scalar(0, 0, 0));		// 图片格式： BGR
+	//Map = zero.clone();
+	//zero.release();
+	// 当前位置
+	circle(Map, Point((int)x_pixel, (int)y_pixel), 4, Scalar(255, 0, 0), -1, 8, 0);
+
+
+	for (unsigned int i = 0; i < data.size(); i++)	// scan_data.size()
 	{
 		__scandot dot;
-		dot = data[i];
+		dot = data[i];		// 未滤波:Data[i] 滤波后:data_dst[i]
 
-		theta = (dot.Angle + yaw) * PI / 180;
 		rho = dot.Dst;
+		theta = dot.Angle * PI / 180;
 
-		x_pt = (int)(rho  * sin(theta) * LidarImageScale) + x_pixel;
-		y_pt = (int)(-rho * cos(theta) * LidarImageScale) + y_pixel;
+		x_pt = rho   * sin(theta) ;
+		y_pt = -rho * cos(theta) ;
+		// 角度旋转处理，用一个旋转矩阵
+		x_rot = x_pt *	cos(-yaw)	+ y_pt * sin(-yaw);		// yaw已经是弧度了
+		y_rot = x_pt *	-sin(-yaw) + y_pt * cos(-yaw);
+		x_rot = x_rot * Map_ImgScale + x_pixel;
+		y_rot = y_rot * Map_ImgScale + y_pixel;
 
-		circle(Map, Point(x_pt, y_pt), 1, Scalar(29, 230, 181), -1, 8, 0);
+		circle(Map, Point((int)x_rot, (int)y_rot), 1, Scalar(0, 125, 255), -1, 8, 0);
 
 	}
-
-	if (is_show && !Map.empty())
+	if (is_show)
 		imshow("Slam Map", Map);
 
 }// void __slam::draw_Map()
