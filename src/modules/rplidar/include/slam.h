@@ -20,14 +20,22 @@ using namespace cv;
 	#include <time.h>
 #endif
 
+/*
+算法代码的注意事项:
+	1 数据刚到手立即归一化单位
+		距离:	mm
+		时间:	s
+		速度:	mm/s
+		加速度:	mm/s^2
+		角度:	deg
 
+*/
 
 class __slam
 {
 public:
 
-	__slam();
-	__slam(double yaw_initial);
+	__slam(double yaw_initial = 0);
 	~__slam();
 
 	double x, y;

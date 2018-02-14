@@ -2,6 +2,8 @@
 #define RPLIDAR_TASK_MAIN_H
 
 #include "lidar_common.h"
+#include "lidar_msg.h"
+
 #include "lidar_driver.h"
 #include "icp_interface.h"
 #include "slam.h"

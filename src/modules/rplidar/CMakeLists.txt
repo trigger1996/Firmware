@@ -38,6 +38,7 @@ set(OPENCV_DIR
 
 # 文件目录
 set(SRCS
+	lidar_msg.cpp
 	lidar_driver.cpp
 	icp_interface.cpp
 	slam.cpp

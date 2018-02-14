@@ -33,7 +33,7 @@ int __lidar_driver::run()
 	// 作图
 	draw(Img, Data, (char *)"Raw", false);
 
-	waitKey(30);
+	//waitKey(30);
 	return SUCCESS;
 
 }// int __lidar_driver::run()
