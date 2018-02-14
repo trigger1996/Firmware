@@ -500,7 +500,7 @@ int __self_nav::Land()
 {
 	int i = 0;
 
-	while (i < 50)
+	while (i < 25)
 	{
 		i++;
 
@@ -545,11 +545,15 @@ int __self_nav::Land()
 		}
 
 		update_HeartBeat();
-		usleep(300000);		// 300ms
+		usleep(50000);		// 50ms
 	}
 
-	warnx("land failed!");
-	return FAILED;
+	///
+	/// 新版的不能使用降落命令了，直接改成设点
+	set_Position(NAN, NAN, 0 - 1.5f, 0, 0);
+	warnx("land command failed, attempt to land by setting nav-pt...");
+	//warnx("land failed!");
+	return STANDBY;
 
 }// int __self_nav::Land()
 

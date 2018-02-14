@@ -15,6 +15,10 @@ int __lidar_msg::init()
 	Acc  = { 0.0f };
 	AHRS = { 0.0f };
 
+	// 准备发布
+	slam_pub = orb_advertise(ORB_ID(rp_slam), &slam_data);
+
+
 	return 0;
 
 }// int __lidar_msg::init()
@@ -34,12 +38,21 @@ int __lidar_msg::receive_Data(int nms)
 
 }// int __lidar_msg::receive_Data()
 
-int __lidar_msg::publish_Data()
+int __lidar_msg::publish_SlamData(double dx, double dy, double x, double y)
 {
+	slam_data.x_last = slam_data.x;
+	slam_data.y_last = slam_data.y;
+	slam_data.x = x;
+	slam_data.y = y;
+
+	slam_data.dx = dx;
+	slam_data.dy = dy;
+
+	orb_publish(ORB_ID(rp_slam), slam_pub, &slam_data);
 
 	return 0;
 
-}// int __lidar_msg::publish_Data()
+}// int __lidar_msg::publish_SlamData(double dx, double dy, double x, double y)
 
 bool __lidar_msg::update_AHRS(int nms)
 {

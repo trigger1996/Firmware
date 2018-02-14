@@ -33,6 +33,8 @@ public:
 	double yaw;
 	Mat    Map;
 
+	double dt;
+
 	int update_Data(vector<__scandot> in,
 					double dx_in, double dy_in,
 					double d_yaw_in);
@@ -61,8 +63,8 @@ private:
 	const double F = 1;
 	const double H = 1;
 	const double I = 1;
-	const double Q = 0.1  * 0.1;		// 0.05  * 0.05
-	const double R = 0.01 * 0.01;		// 0.005 * 0.005
+	const double Q = 0.07  * 0.07;		// 0.05  * 0.05
+	const double R = 0.005 * 0.005;		// 0.005 * 0.005
 
 	/// 卡尔曼滤波器全局变量
 	double Xx, Xy;
@@ -85,7 +87,7 @@ private:
 #else
 	double t_last, t_now;
 #endif
-	double dt;
+	//double dt;				// 转为公有
 	double update_Time();
 };
 

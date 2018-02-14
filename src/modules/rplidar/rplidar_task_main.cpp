@@ -93,6 +93,8 @@ int rplidar_thread_main(int argc, char *argv[])
 			slam.run(lidar.Data, icp.dx, icp.dy, icp.d_yaw,
 					 m.Acc.X, m.Acc.Y,
 					 m.AHRS);
+			m.publish_SlamData(slam.vx * slam.dt, slam.vy * slam.dt,
+							   slam.x, slam.y);
 
 			if (i % 25 == 0)
 				imwrite("slam.jpg", slam.Map);				// 50ms

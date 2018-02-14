@@ -83,6 +83,10 @@ public:
 	// 收到数据
 	struct vehicle_command_ack_s _ack;
 
+	/// 基本模式选择
+	bool is_gps_online;
+	bool is_lidar_online;
+	//bool is_datalink_online;
 
 	int Init();
 

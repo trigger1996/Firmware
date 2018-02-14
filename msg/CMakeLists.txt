@@ -127,6 +127,7 @@ set(msg_files
 	#
 	control_state.msg
 	socket_recv.msg
+	rp_slam.msg
 	)
 
 px4_add_git_submodule(TARGET git_gencpp PATH tools/gencpp)

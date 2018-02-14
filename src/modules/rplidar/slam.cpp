@@ -30,6 +30,7 @@ __slam::__slam(double yaw_initial)
 {
 	__slam();
 
+	// 初始化的时候不知道为什么前面写好了这里还没作用
 	if (Map.empty())
 	{
 		Mat zero(Map_ImgHeight, Map_ImgWidth, CV_8UC3, Scalar(0, 0, 0));		// 图片格式： BGR
@@ -238,7 +239,7 @@ void __slam::draw_Map(bool is_show)
 	//Map = zero.clone();
 	//zero.release();
 	// 当前位置
-	circle(Map, Point((int)x_pixel, (int)y_pixel), 4, Scalar(255, 0, 0), -1, 8, 0);
+	circle(Map, Point((int)x_pixel, (int)y_pixel), 2, Scalar(255, 0, 255), -1, 8, 0);
 
 
 	for (unsigned int i = 0; i < data.size(); i++)	// scan_data.size()
