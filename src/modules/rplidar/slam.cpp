@@ -10,7 +10,7 @@ __slam::__slam(double yaw_initial)
 	x = y = 0;
 	yaw = yaw_initial;
 
-	x_pixel = y_pixel = 200;
+	x_pixel = y_pixel = 0;
 
 	Mat zero(Map_ImgHeight, Map_ImgWidth, CV_8UC3, Scalar(0, 0, 0));		// 图片格式： BGR
 	Map = zero.clone();
@@ -66,7 +66,7 @@ int __slam::run()
 
 	///
 	/// 调用卡尔曼滤波器
-	//kalman_filter();
+	kalman_filter();
 
 	///
 	/// 积分得到位置
@@ -117,7 +117,7 @@ int __slam::run()
 
 	draw_Map(true);
 
-	PX4_INFO("x: %6.3f, y: %6.3f", dx, dy);
+	PX4_INFO("x: %d, y: %d", x, y);
 	//PX4_INFO("X: %6.3f, Y: %6.3f", x, y);
 	return SUCCESS;
 
@@ -127,7 +127,7 @@ void __slam::kalman_filter()
 {
 	// 核心代码
 	// 输入单位:	速度v:		mm/s
-	//			加速度a:	mm/s^2
+	//			加速度a:		mm/s^2
 	//			角度:		deg
 	//			时间:		ms
 
@@ -158,21 +158,21 @@ void __slam::kalman_filter()
 	double z_out_temp = 0;
 	rotation_mat(vx_in, vy_in, 0, ahrs.Roll, ahrs.Pitch, ahrs.Yaw, &vx_in, &vy_in, &z_out_temp);
 
-	Xx = F * Xx + acc_x * 1000 * dt;
+	Xx = F * Xx + acc_x * dt;
 	Px = F * Px + Q;
 	Kx = H * Px / (H * Px + R);
 	Xx = Xx + Kx * (vx_in - Xx * H);
 	Px = (I - Kx) * Px;
 
-	Xy = F * Xy + acc_y * 1000 * dt;
+	Xy = F * Xy + acc_y * dt;
 	Py = F * Py + Q;
 	Ky = H * Py / (H * Py + R);
 	Xy = Xy + Ky * (vy_in - Xy * H);
 	Py = (I - Ky) * Py;
 
-	// 取出值，因为相对运动，所以这边要取负号
-	vx = -Xx;
-	vy = -Xy;
+	// 取出值
+	vx = Xx;
+	vy = Xy;
 
 	// 测试代码，输出卡尔曼增益
 	//PX4_INFO("Kalman Gain: Kx: %f, Ky: %f", Kx, Ky);
@@ -216,7 +216,7 @@ int __slam::update_QuadData(double acc_x_in, double acc_y_in,
 	// 输入:
 	// acc_x_in, acc_y_in:	m/s^2
 	// ahrs_in:				deg
-	acc_x = acc_x_in;
+	acc_x = -acc_x_in;
 	acc_y = acc_y_in;
 	ahrs  = ahrs_in;
 

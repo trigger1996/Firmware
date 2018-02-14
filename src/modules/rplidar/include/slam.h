@@ -29,6 +29,18 @@ using namespace cv;
 		加速度:	mm/s^2
 		角度:	deg
 
+	2 极性参考
+
+		3   1
+		 \ /
+		  X    ↑
+		 / \
+		2   4
+
+		x
+		↑
+		X→y
+	   z
 */
 
 class __slam
