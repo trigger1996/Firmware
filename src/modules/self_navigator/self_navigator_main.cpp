@@ -1,4 +1,7 @@
 #include "self_navigator.h"
+#include "self_navigator_abs.hpp"
+#include "self_navigator_outdoor.hpp"
+#include "self_navigator_indoor.hpp"
 
 /**
  * @file self_navigator_main.cpp
@@ -15,7 +18,7 @@ static bool thread_running = false;
 static bool thread_should_exit = false;
 static int daemon_task;
 
-__self_nav Nav;
+__self_nav_indoor Nav;
 int test_flight();			// 试飞
 
 int self_navigator_main(int argc, char *argv[])
@@ -64,6 +67,24 @@ int self_navigator_thread_main(int argc, char *argv[])
 
 	Nav.Init();
 
+
+	//  这里开始获取vehicle_status,有vehicle_status_s里面的system_id和component_id才能发送vehicle_command命令飞机
+	while (Nav.update_VehicleStatus() != SUCCESS) { }
+	Nav._command.target_system = Nav.vehicle_stat.system_id;//system_id写入
+	Nav._command.target_component = Nav.vehicle_stat.component_id;//component_id写入
+	int j = 0;
+	while (true) {
+		if (j <= 500)
+			Nav.set_RC(1000, 1000, 1000, 1000);
+		else
+			Nav.set_RC(1500, 1500, 2000, 1500);
+		if (j == 500)
+			Nav.set_ARM_DISARM(true);
+		j++;
+		usleep(20e3);
+	}
+
+
 	//int home_pos_sub = orb_subscribe(ORB_ID(home_position));
 	//px4_pollfd_struct_t fds;
 	//fds.events = POLLIN;
@@ -83,7 +104,7 @@ int self_navigator_thread_main(int argc, char *argv[])
 
 	/// 设置进入posctl模式
 	//  这样在退出offboard的时候会进入posctl，飞机不容易失控
-	while (Nav.select_FlightMode() != SUCCESS)
+	while (Nav.select_FlightMode(PX4_CUSTOM_MAIN_MODE_POSCTL) != SUCCESS)
 	{
 		//如果没有跳出表示切换失败,循环回去再切换
 		usleep(10000);
@@ -104,63 +125,22 @@ int self_navigator_thread_main(int argc, char *argv[])
 	Nav.update_HeartBeat();
 
 
-	/// 拍视频的时候先用这个测试，省事
-	test_flight();
-
-
-	Nav.update_User_Status(500);
-	Cov.update_Current_Pos(Nav.gbl_pos.lat, Nav.gbl_pos.lon, Nav.gbl_pos.alt);
-	tgt_ned = Cov.WGS84toNED(Nav.skt_recv.lat, Nav.skt_recv.lng, Nav.skt_recv.alt); // home position
-	Nav.get_Tgt_NED(tgt_ned);
-
-
-	float vx, vy;
-	double v_all = 1.5f;
-	double theta;
-	double d_lon, d_lat;
-
-	d_lon = (double)Nav.skt_recv.lng - Nav.gbl_pos.lon * 10000000.0f;
-	d_lat = (double)Nav.skt_recv.lat - Nav.gbl_pos.lat * 10000000.0f;
-
-	theta = atan2(d_lat, d_lon);
-	vx = v_all * sin(theta);
-	vy = v_all * cos(theta);
-
-	//Nav.set_Position(0, 0, 10, vx, vy);		// NAN NAN alt vx vy
-
-
+	Nav.set_ARM_DISARM(true);
+	Nav.Takeoff(5.0f);
+	while (Nav.set_Offboard_Mode(true) != SUCCESS)	{
+		usleep(10000);
+	}
+	Nav.set_Position(0, 0, 10, 0, 0);		// NAN NAN alt vx vy
 	int i = 0;
-	do
-	{
+	while (i < 5) {
 		Nav.update_HeartBeat();
-
-		if (i % 10 == 0)
-		{
-			Nav.update_User_Status(100);
-			Cov.update_Current_Pos(Nav.gbl_pos.lat, Nav.gbl_pos.lon, Nav.gbl_pos.alt);
-			tgt_ned = Cov.WGS84toNED(Nav.skt_recv.lat, Nav.skt_recv.lng, Nav.skt_recv.alt); // home position
-			Nav.get_Tgt_NED(tgt_ned);
-
-			d_lon = (double)Nav.skt_recv.lng - Nav.gbl_pos.lon * 10000000.0f;
-			d_lat = (double)Nav.skt_recv.lat - Nav.gbl_pos.lat * 10000000.0f;
-
-			theta = atan2(d_lat, d_lon);
-			vx = v_all * sin(theta);
-			vy = v_all * cos(theta);
-
-			Nav.set_Position(0, 0, 10, vx, vy);		// NAN NAN alt vx vy
-
-			warnx("Lat %f, Lon %f", Nav.gbl_pos.lat, Nav.gbl_pos.lon);
-			i = 0;
-		}
-
-
-
-		usleep(300000);
 		i++;
-	} while (Nav.is_Reached_TgtLocation() != true);
-	Nav.Land();
+		usleep(250e3);
+	}
 
+
+	/// 拍视频的时候先用这个测试，省事
+	//test_flight();
 
 	///
 	/// 主循环

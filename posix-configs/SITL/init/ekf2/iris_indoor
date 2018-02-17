@@ -80,7 +80,7 @@ logger start -e -t
 mavlink boot_complete
 replay trystart
 
-#gpssim start					# 注意这一项
+gpssim start					# 注意这一项
 #rpi_socket start -p 2
 self_navigator start
 

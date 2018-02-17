@@ -67,8 +67,11 @@ link_libraries(
         )
 
 set(SRCS
+	include/self_navigator_abs.hpp
+	include/self_navigator_outdoor.hpp
+	include/self_navigator_indoor.hpp
+
 	self_navigator_main.cpp
-	nav_basic.cpp
 	coordinate_conversion.cpp
 	path_planning.cpp
 	)
