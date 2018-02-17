@@ -37,9 +37,7 @@
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/socket_recv.h>
-
 #include <uORB/topics/vehicle_control_mode.h>
-
 #include <poll.h>
 
 #include <opencv2/opencv.hpp>
@@ -57,6 +55,29 @@ using namespace cv;
 #define ALT_ERROR_THRESHOLD		0.20f		// 高度误差允许值，单位m
 #define HOVER_TIME_SIMPLE		5			// 单位s，Simple Task中悬停的时间，如果用hrt_absolute_time(), 则0000000 -> 10s
 #define TIME_OVERFLOW_THRESHOLD	65			// 65s，hrt_absolute_time()这个东西有时候会读出来负数，不准，这边加个保护
+
+enum PX4_CUSTOM_MAIN_MODE {
+	PX4_CUSTOM_MAIN_MODE_MANUAL = 1,
+	PX4_CUSTOM_MAIN_MODE_ALTCTL,
+	PX4_CUSTOM_MAIN_MODE_POSCTL,
+	PX4_CUSTOM_MAIN_MODE_AUTO,
+	PX4_CUSTOM_MAIN_MODE_ACRO,
+	PX4_CUSTOM_MAIN_MODE_OFFBOARD,
+	PX4_CUSTOM_MAIN_MODE_STABILIZED,
+	PX4_CUSTOM_MAIN_MODE_RATTITUDE,
+	PX4_CUSTOM_MAIN_MODE_SIMPLE /* unused, but reserved for future use */
+};
+
+enum PX4_CUSTOM_SUB_MODE_AUTO {
+	PX4_CUSTOM_SUB_MODE_AUTO_READY = 1,
+	PX4_CUSTOM_SUB_MODE_AUTO_TAKEOFF,
+	PX4_CUSTOM_SUB_MODE_AUTO_LOITER,
+	PX4_CUSTOM_SUB_MODE_AUTO_MISSION,
+	PX4_CUSTOM_SUB_MODE_AUTO_RTL,
+	PX4_CUSTOM_SUB_MODE_AUTO_LAND,
+	PX4_CUSTOM_SUB_MODE_AUTO_RTGS,
+	PX4_CUSTOM_SUB_MODE_AUTO_FOLLOW_TARGET
+};
 
 extern "C" __EXPORT int self_navigator_main(int argc, char *argv[]);
 

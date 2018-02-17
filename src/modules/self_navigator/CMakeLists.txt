@@ -41,6 +41,7 @@ set(OPENCV_DIR
         )
 
 include_directories(
+		include/
         ${OPENCV_DIR}/include/
 	)
 

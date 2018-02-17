@@ -226,7 +226,7 @@ int __self_nav::select_FlightMode()
 	//发送vehicle_command
 	_command.command = vehicle_command_s::VEHICLE_CMD_DO_SET_MODE;//设置模式命令
 	_command.param1 = 1.0f;//主模式为costom
-	_command.param2 = 3.0f;//二级模式为position control
+	_command.param2 = PX4_CUSTOM_MAIN_MODE_POSCTL;//二级模式为position control
 	_command.param3 = 0.0f;//三级模式没有！
 	if (vehicle_command_pub != nullptr) {
 		orb_publish(ORB_ID(vehicle_command), vehicle_command_pub, &_command);
