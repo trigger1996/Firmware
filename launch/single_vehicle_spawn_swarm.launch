@@ -21,9 +21,11 @@
     <!-- PX4 configs -->
     <arg name="interactive" default="true"/>
 	<arg name="udp_offboard_port_remote" default="14540" />
-    <env name="UDP_OFFB_PORT_REMOTE" value="$(arg udp_offboard_port_remote)" />	
 	<arg name="udp_offboard_port_local"  default="14557" />
-    <env name="UDP_OFFB_PORT_LOCAL"  value="$(arg udp_offboard_port_local)" />	
+	<arg name="udp_gcs_port_local"       default="14556" />
+    <env name="UDP_OFFB_PORT_REMOTE" value="$(arg udp_offboard_port_remote)" />		
+    <env name="UDP_OFFB_PORT_LOCAL"  value="$(arg udp_offboard_port_local)"  />
+    <env name="UDP_GCS_PORT_LOCAL"   value="$(arg udp_gcs_port_local)"       />	
     <!-- generate urdf vehicle model -->
     <arg name="cmd" default="$(find xacro)/xacro $(find px4)/Tools/sitl_gazebo/models/rotors_description/urdf/$(arg vehicle)_base.xacro rotors_description_dir:=$(find px4)/Tools/sitl_gazebo/models/rotors_description mavlink_udp_port:=$(arg mavlink_udp_port) --inorder"/>
     <param command="$(arg cmd)" name="rotors_description"/>
