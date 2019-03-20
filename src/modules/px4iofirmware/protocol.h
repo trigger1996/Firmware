@@ -78,6 +78,8 @@
 #define REG_TO_FLOAT(_reg)	((float)REG_TO_SIGNED(_reg) / 10000.0f)
 #define FLOAT_TO_REG(_float)	SIGNED_TO_REG((int16_t)floorf((_float + 0.00005f) * 10000.0f))
 
+#define REG_TO_BOOL(_reg) 	((bool)(_reg))
+
 #define PX4IO_PROTOCOL_VERSION		4
 
 /* maximum allowable sizes on this protocol version */
@@ -235,6 +237,9 @@ enum {							/* DSM bind states */
 #define PX4IO_P_SETUP_THR_MDL_FAC 		25	/* factor for modelling static pwm output to thrust relationship */
 
 #define PX4IO_P_SETUP_THERMAL			26	/* thermal management */
+
+#define PX4IO_P_SETUP_AIRMODE 			27 	/* air-mode */
+
 #define PX4IO_THERMAL_IGNORE			UINT16_MAX
 #define PX4IO_THERMAL_OFF			0
 #define PX4IO_THERMAL_FULL			10000

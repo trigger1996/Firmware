@@ -78,10 +78,6 @@ LandingTargetEstimator::LandingTargetEstimator() :
 	_check_params(true);
 }
 
-LandingTargetEstimator::~LandingTargetEstimator()
-{
-}
-
 void LandingTargetEstimator::update()
 {
 	_check_params(false);
@@ -94,14 +90,13 @@ void LandingTargetEstimator::update()
 			PX4_WARN("Timeout");
 			_estimator_initialized = false;
 
-		} else if (_vehicleLocalPosition_valid
-			   && _vehicleLocalPosition.v_xy_valid) {
+		} else {
 			float dt = (hrt_absolute_time() - _last_predict) / SEC2USEC;
 
 			// predict target position with the help of accel data
 			matrix::Vector3f a;
 
-			if (_sensorBias_valid) {
+			if (_vehicleAttitude_valid && _sensorBias_valid) {
 				matrix::Quaternion<float> q_att(&_vehicleAttitude.q[0]);
 				_R_att = matrix::Dcm<float>(q_att);
 				a(0) = _sensorBias.accel_x;
@@ -163,8 +158,10 @@ void LandingTargetEstimator::update()
 
 	if (!_estimator_initialized) {
 		PX4_INFO("Init");
-		_kalman_filter_x.init(_rel_pos(0), 0, _params.pos_unc_init, _params.vel_unc_init);
-		_kalman_filter_y.init(_rel_pos(1), 0, _params.pos_unc_init, _params.vel_unc_init);
+		float vx_init = _vehicleLocalPosition.v_xy_valid ? -_vehicleLocalPosition.vx : 0.f;
+		float vy_init = _vehicleLocalPosition.v_xy_valid ? -_vehicleLocalPosition.vy : 0.f;
+		_kalman_filter_x.init(_rel_pos(0), vx_init, _params.pos_unc_init, _params.vel_unc_init);
+		_kalman_filter_y.init(_rel_pos(1), vy_init, _params.pos_unc_init, _params.vel_unc_init);
 
 		_estimator_initialized = true;
 		_last_update = hrt_absolute_time();
@@ -272,7 +269,6 @@ void LandingTargetEstimator::_check_params(const bool force)
 
 void LandingTargetEstimator::_initialize_topics()
 {
-	// subscribe to position, attitude, arming and velocity changes
 	_vehicleLocalPositionSub = orb_subscribe(ORB_ID(vehicle_local_position));
 	_attitudeSub = orb_subscribe(ORB_ID(vehicle_attitude));
 	_sensorBiasSub = orb_subscribe(ORB_ID(sensor_bias));
@@ -317,7 +313,7 @@ void LandingTargetEstimator::_update_params()
 	param_get(_paramHandle.meas_unc, &_params.meas_unc);
 	param_get(_paramHandle.pos_unc_init, &_params.pos_unc_init);
 	param_get(_paramHandle.vel_unc_init, &_params.vel_unc_init);
-	int mode = 0;
+	int32_t mode = 0;
 	param_get(_paramHandle.mode, &mode);
 	_params.mode = (TargetMode)mode;
 	param_get(_paramHandle.scale_x, &_params.scale_x);

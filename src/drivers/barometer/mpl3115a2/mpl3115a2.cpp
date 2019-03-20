@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2017 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2017-2018 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,13 +34,11 @@
 /**
  * @file mpl3115a2.cpp
  *
- * FIXME!: This is stubberd out driver for the NXP MPL3115A2
- * it has bogus code in it and is just being used to verify
- * the i2C buss and WHOAMI
- *
  * Driver for the MPL3115A2 barometric pressure sensor connected via I2C.
  */
 
+#include <lib/cdev/CDev.hpp>
+#include <drivers/device/Device.hpp>
 #include <px4_config.h>
 #include <px4_log.h>
 
@@ -56,7 +54,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <unistd.h>
-#include <getopt.h>
+#include <px4_getopt.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/wqueue.h>
@@ -70,9 +68,8 @@
 #include <drivers/drv_hrt.h>
 #include <drivers/device/ringbuffer.h>
 
-#include <systemlib/perf_counter.h>
+#include <perf/perf_counter.h>
 #include <systemlib/err.h>
-#include <platforms/px4_getopt.h>
 
 #include "mpl3115a2.h"
 
@@ -99,12 +96,12 @@ enum MPL3115A2_BUS {
  */
 
 #define MPL3115A2_CONVERSION_INTERVAL	10000	/* microseconds */
-#define MPL3115A2_OSR                   0       /* Over Sample rate of 1 6MS Minimum time between data samples */
+#define MPL3115A2_OSR                   2       /* Over Sample rate of 4 18MS Minimum time between data samples */
 #define MPL3115A2_CTRL_TRIGGER          (CTRL_REG1_OST | CTRL_REG1_OS(MPL3115A2_OSR))
 #define MPL3115A2_BARO_DEVICE_PATH_EXT  "/dev/mpl3115a2_ext"
 #define MPL3115A2_BARO_DEVICE_PATH_INT  "/dev/mpl3115a2_int"
 
-class MPL3115A2 : public device::CDev
+class MPL3115A2 : public cdev::CDev
 {
 public:
 	MPL3115A2(device::Device *interface, const char *path);
@@ -121,7 +118,7 @@ public:
 	void			print_info();
 
 protected:
-	Device			*_interface;
+	device::Device			*_interface;
 
 	struct work_s		_work;
 	unsigned		_measure_ticks;
@@ -132,9 +129,6 @@ protected:
 	/*  */
 	float			_P;
 	float			_T;
-
-	/* altitude conversion calibration */
-	unsigned		_msl_pressure;	/* in Pa */
 
 	orb_advert_t		_baro_topic;
 	int			_orb_class_instance;
@@ -202,14 +196,13 @@ protected:
 extern "C" __EXPORT int mpl3115a2_main(int argc, char *argv[]);
 
 MPL3115A2::MPL3115A2(device::Device *interface, const char *path) :
-	CDev("MPL3115A2", path),
+	CDev(path),
 	_interface(interface),
 	_measure_ticks(0),
 	_reports(nullptr),
 	_collect_phase(false),
 	_P(0),
 	_T(0),
-	_msl_pressure(101325),
 	_baro_topic(nullptr),
 	_orb_class_instance(-1),
 	_class_instance(-1),
@@ -220,11 +213,7 @@ MPL3115A2::MPL3115A2(device::Device *interface, const char *path) :
 	// work_cancel in stop_cycle called from the dtor will explode if we don't do this...
 	memset(&_work, 0, sizeof(_work));
 
-	// set the device type from the interface
-	_device_id.devid_s.bus_type = _interface->get_device_bus_type();
-	_device_id.devid_s.bus = _interface->get_device_bus();
-	_device_id.devid_s.address = _interface->get_device_address();
-	_device_id.devid_s.devtype = DRV_BARO_DEVTYPE_MPL3115A2;
+	_interface->set_device_type(DRV_BARO_DEVTYPE_MPL3115A2);
 }
 
 MPL3115A2::~MPL3115A2()
@@ -257,7 +246,7 @@ MPL3115A2::init()
 	ret = CDev::init();
 
 	if (ret != OK) {
-		DEVICE_DEBUG("CDev init failed");
+		PX4_DEBUG("CDev init failed");
 		goto out;
 	}
 
@@ -265,7 +254,7 @@ MPL3115A2::init()
 	_reports = new ringbuffer::RingBuffer(2, sizeof(sensor_baro_s));
 
 	if (_reports == nullptr) {
-		DEVICE_DEBUG("can't get memory for reports");
+		PX4_DEBUG("can't get memory for reports");
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -273,7 +262,7 @@ MPL3115A2::init()
 	/* register alternate interfaces if we have to */
 	_class_instance = register_class_devname(BARO_BASE_DEVICE_PATH);
 
-	struct baro_report brp;
+	sensor_baro_s brp;
 	_reports->flush();
 
 	while (true) {
@@ -312,12 +301,12 @@ MPL3115A2::init()
 		// DEVICE_LOG("altitude (%u) = %.2f", _device_type, (double)brp.altitude);
 
 		/* ensure correct devid */
-		brp.device_id = _device_id.devid;
+		brp.device_id = _interface->get_device_id();
 
 		ret = OK;
 
 		_baro_topic = orb_advertise_multi(ORB_ID(sensor_baro), &brp,
-						  &_orb_class_instance, (external()) ? ORB_PRIO_HIGH : ORB_PRIO_DEFAULT);
+						  &_orb_class_instance, (_interface->external()) ? ORB_PRIO_HIGH : ORB_PRIO_DEFAULT);
 
 		if (_baro_topic == nullptr) {
 			warnx("failed to create sensor_baro publication");
@@ -333,8 +322,8 @@ out:
 ssize_t
 MPL3115A2::read(struct file *filp, char *buffer, size_t buflen)
 {
-	unsigned count = buflen / sizeof(struct baro_report);
-	struct baro_report *brp = reinterpret_cast<struct baro_report *>(buffer);
+	unsigned count = buflen / sizeof(sensor_baro_s);
+	sensor_baro_s *brp = reinterpret_cast<sensor_baro_s *>(buffer);
 	int ret = 0;
 
 	/* buffer must be large enough */
@@ -402,21 +391,11 @@ MPL3115A2::ioctl(struct file *filp, int cmd, unsigned long arg)
 	case SENSORIOCSPOLLRATE: {
 			switch (arg) {
 
-			/* switching to manual polling */
-			case SENSOR_POLLRATE_MANUAL:
-				stop_cycle();
-				_measure_ticks = 0;
-				return OK;
-
-			/* external signalling not supported */
-			case SENSOR_POLLRATE_EXTERNAL:
-
 			/* zero would be bad */
 			case 0:
 				return -EINVAL;
 
-			/* set default/max polling rate */
-			case SENSOR_POLLRATE_MAX:
+			/* set default polling rate */
 			case SENSOR_POLLRATE_DEFAULT: {
 					/* do we need to start internal polling? */
 					bool want_start = (_measure_ticks == 0);
@@ -458,30 +437,6 @@ MPL3115A2::ioctl(struct file *filp, int cmd, unsigned long arg)
 			}
 		}
 
-	case SENSORIOCGPOLLRATE:
-		if (_measure_ticks == 0) {
-			return SENSOR_POLLRATE_MANUAL;
-		}
-
-		return (1000 / _measure_ticks);
-
-	case SENSORIOCSQUEUEDEPTH: {
-			/* lower bound is mandatory, upper bound is a sanity check */
-			if ((arg < 1) || (arg > 100)) {
-				return -EINVAL;
-			}
-
-			irqstate_t flags = px4_enter_critical_section();
-
-			if (!_reports->resize(arg)) {
-				px4_leave_critical_section(flags);
-				return -ENOMEM;
-			}
-
-			px4_leave_critical_section(flags);
-			return OK;
-		}
-
 	case SENSORIOCRESET: {
 			/*
 			 * Since we are initialized, we do not need to do anything, since the
@@ -491,19 +446,6 @@ MPL3115A2::ioctl(struct file *filp, int cmd, unsigned long arg)
 			_interface->ioctl(IOCTL_RESET, dummy);
 			return OK;
 		}
-
-	case BAROIOCSMSLPRESSURE:
-
-		/* range-check for sanity */
-		if ((arg < 80000) || (arg > 120000)) {
-			return -EINVAL;
-		}
-
-		_msl_pressure = arg;
-		return OK;
-
-	case BAROIOCGMSLPRESSURE:
-		return _msl_pressure;
 
 	default:
 		break;
@@ -645,7 +587,7 @@ MPL3115A2::collect()
 		return -EAGAIN;
 	}
 
-	struct baro_report report;
+	sensor_baro_s report;
 
 	/* this should be fairly close to the end of the conversion, so the best approximation of the time */
 	report.timestamp = hrt_absolute_time();
@@ -661,56 +603,17 @@ MPL3115A2::collect()
 		return ret;
 	}
 
-
 	_T = (float) reading.temperature.b[1] + ((float)(reading.temperature.b[0]) / 16.0f);
-
 	_P = (float)(reading.pressure.q >> 8) + ((float)(reading.pressure.b[0]) / 4.0f);
 
 	report.temperature = _T;
 	report.pressure = _P / 100.0f;		/* convert to millibar */
 
 	/* return device ID */
-	report.device_id = _device_id.devid;
-
-	/* altitude calculations based on http://www.kansasflyer.org/index.asp?nav=Avi&sec=Alti&tab=Theory&pg=1 */
-
-	/*
-	 * PERFORMANCE HINT:
-	 *
-	 * The single precision calculation is 50 microseconds faster than the double
-	 * precision variant. It is however not obvious if double precision is required.
-	 * Pending more inspection and tests, we'll leave the double precision variant active.
-	 *
-	 * Measurements:
-	 * 	double precision: mpl3115a2_read: 992 events, 258641us elapsed, min 202us max 305us
-	 *	single precision: mpl3115a2_read: 963 events, 208066us elapsed, min 202us max 241us
-	 */
-
-	/* tropospheric properties (0-11km) for standard atmosphere */
-	const double T1 = 15.0 + 273.15;	/* temperature at base height in Kelvin */
-	const double a  = -6.5 / 1000;	/* temperature gradient in degrees per metre */
-	const double g  = 9.80665;	/* gravity constant in m/s/s */
-	const double R  = 287.05;	/* ideal gas constant in J/kg/K */
-
-	/* current pressure at MSL in kPa */
-	double p1 = _msl_pressure / 1000.0;
-
-	/* measured pressure in kPa */
-	double p = (double) _P / 1000.0;
-
-	/*
-	 * Solve:
-	 *
-	 *     /        -(aR / g)     \
-	 *    | (p / p1)          . T1 | - T1
-	 *     \                      /
-	 * h = -------------------------------  + h1
-	 *                   a
-	 */
-	report.altitude = (((pow((p / p1), (-(a * R) / g))) * T1) - T1) / a;
+	report.device_id = _interface->get_device_id();
 
 	/* publish it */
-	if (!(_pub_blocked) && _baro_topic != nullptr) {
+	if (_baro_topic != nullptr) {
 		/* publish it */
 		orb_publish(ORB_ID(sensor_baro), _baro_topic, &report);
 	}
@@ -732,10 +635,10 @@ MPL3115A2::print_info()
 	perf_print_counter(_comms_errors);
 	printf("poll interval:  %u ticks\n", _measure_ticks);
 	_reports->print_info("report queue");
-	printf("device:         mpl3115a2\n");
-	printf("P:              %.3f\n", (double)_P);
-	printf("T:              %.3f\n", (double)_T);
-	printf("MSL pressure:   %10.4f\n", (double)(_msl_pressure / 100.f));
+
+	sensor_baro_s brp = {};
+	_reports->get(&brp);
+	print_message(brp);
 }
 
 /**
@@ -766,6 +669,12 @@ struct mpl3115a2_bus_option {
 #ifdef PX4_I2C_BUS_EXPANSION
 	{ MPL3115A2_BUS_I2C_EXTERNAL, "/dev/mpl3115a2_ext", &MPL3115A2_i2c_interface, PX4_I2C_BUS_EXPANSION, NULL },
 #endif
+#ifdef PX4_I2C_BUS_EXPANSION1
+	{ MPL3115A2_BUS_I2C_EXTERNAL, "/dev/mpl3115a2_ext1", &MPL3115A2_i2c_interface, PX4_I2C_BUS_EXPANSION1, NULL },
+#endif
+#ifdef PX4_I2C_BUS_EXPANSION2
+	{ MPL3115A2_BUS_I2C_EXTERNAL, "/dev/mpl3115a2_ext2", &MPL3115A2_i2c_interface, PX4_I2C_BUS_EXPANSION2, NULL },
+#endif
 };
 #define NUM_BUS_OPTIONS (sizeof(bus_options)/sizeof(bus_options[0]))
 
@@ -775,7 +684,6 @@ void	start(enum MPL3115A2_BUS busid);
 void	test(enum MPL3115A2_BUS busid);
 void	reset(enum MPL3115A2_BUS busid);
 void	info();
-void	calibrate(unsigned altitude, enum MPL3115A2_BUS busid);
 void	usage();
 
 /**
@@ -880,7 +788,7 @@ void
 test(enum MPL3115A2_BUS busid)
 {
 	struct mpl3115a2_bus_option &bus = find_bus(busid);
-	struct baro_report report;
+	sensor_baro_s report;
 	ssize_t sz;
 	int ret;
 
@@ -899,21 +807,7 @@ test(enum MPL3115A2_BUS busid)
 		err(1, "immediate read failed");
 	}
 
-	warnx("single read");
-	warnx("pressure:    %10.4f", (double)report.pressure);
-	warnx("altitude:    %11.4f", (double)report.altitude);
-	warnx("temperature: %8.4f", (double)report.temperature);
-	warnx("time:        %lld", report.timestamp);
-
-	/* set the queue depth to 10 */
-	if (OK != ioctl(fd, SENSORIOCSQUEUEDEPTH, 10)) {
-		errx(1, "failed to set queue depth");
-	}
-
-	/* start the sensor polling at 2Hz */
-	if (OK != ioctl(fd, SENSORIOCSPOLLRATE, 2)) {
-		errx(1, "failed to set 2Hz poll rate");
-	}
+	print_message(report);
 
 	/* read the sensor 5x and report each value */
 	for (unsigned i = 0; i < 5; i++) {
@@ -935,11 +829,7 @@ test(enum MPL3115A2_BUS busid)
 			err(1, "periodic read failed");
 		}
 
-		warnx("periodic read %u", i);
-		warnx("pressure:    %10.4f", (double)report.pressure);
-		warnx("altitude:    %11.4f", (double)report.altitude);
-		warnx("temperature: %8.4f", (double)report.temperature);
-		warnx("time:        %lld", report.timestamp);
+		print_message(report);
 	}
 
 	close(fd);
@@ -990,87 +880,10 @@ info()
 	exit(0);
 }
 
-/**
- * Calculate actual MSL pressure given current altitude
- */
-void
-calibrate(unsigned altitude, enum MPL3115A2_BUS busid)
-{
-	struct mpl3115a2_bus_option &bus = find_bus(busid);
-	struct baro_report report;
-	float	pressure;
-	float	p1;
-
-	int fd;
-
-	fd = open(bus.devpath, O_RDONLY);
-
-	if (fd < 0) {
-		err(1, "open failed (try 'mpl3115a2 start' if the driver is not running)");
-	}
-
-	/* start the sensor polling at max */
-	if (OK != ioctl(fd, SENSORIOCSPOLLRATE, SENSOR_POLLRATE_MAX)) {
-		errx(1, "failed to set poll rate");
-	}
-
-	/* average a few measurements */
-	pressure = 0.0f;
-
-	for (unsigned i = 0; i < 20; i++) {
-		struct pollfd fds;
-		int ret;
-		ssize_t sz;
-
-		/* wait for data to be ready */
-		fds.fd = fd;
-		fds.events = POLLIN;
-		ret = poll(&fds, 1, 1000);
-
-		if (ret != 1) {
-			errx(1, "timed out waiting for sensor data");
-		}
-
-		/* now go get it */
-		sz = read(fd, &report, sizeof(report));
-
-		if (sz != sizeof(report)) {
-			err(1, "sensor read failed");
-		}
-
-		pressure += report.pressure;
-	}
-
-	pressure /= 20;		/* average */
-	pressure /= 10;		/* scale from millibar to kPa */
-
-	/* tropospheric properties (0-11km) for standard atmosphere */
-	const float T1 = 15.0 + 273.15;	/* temperature at base height in Kelvin */
-	const float a  = -6.5 / 1000;	/* temperature gradient in degrees per metre */
-	const float g  = 9.80665f;	/* gravity constant in m/s/s */
-	const float R  = 287.05f;	/* ideal gas constant in J/kg/K */
-
-	warnx("averaged pressure %10.4fkPa at %um", (double)pressure, altitude);
-
-	p1 = pressure * (powf(((T1 + (a * (float)altitude)) / T1), (g / (a * R))));
-
-	warnx("calculated MSL pressure %10.4fkPa", (double)p1);
-
-	/* save as integer Pa */
-	p1 *= 1000.0f;
-
-	if (ioctl(fd, BAROIOCSMSLPRESSURE, (unsigned long)p1) != OK) {
-		err(1, "BAROIOCSMSLPRESSURE");
-	}
-
-	close(fd);
-	exit(0);
-}
-
 void
 usage()
 {
-	warnx("missing command: try 'start', 'info', 'test', 'reset', 'calibrate'");
+	warnx("missing command: try 'start', 'info', 'test', 'reset'");
 	warnx("options:");
 	warnx("    -X    (external I2C bus)");
 	warnx("    -I    (intternal I2C bus)");
@@ -1083,8 +896,8 @@ int
 mpl3115a2_main(int argc, char *argv[])
 {
 	enum MPL3115A2_BUS busid = MPL3115A2_BUS_ALL;
-	int ch;
 	int myoptind = 1;
+	int ch;
 	const char *myoptarg = NULL;
 
 	/* jump over start/off/etc and look at options first */
@@ -1102,6 +915,11 @@ mpl3115a2_main(int argc, char *argv[])
 			mpl3115a2::usage();
 			exit(0);
 		}
+	}
+
+	if (myoptind >= argc) {
+		mpl3115a2::usage();
+		exit(0);
 	}
 
 	const char *verb = argv[myoptind];
@@ -1132,19 +950,6 @@ mpl3115a2_main(int argc, char *argv[])
 	 */
 	if (!strcmp(verb, "info")) {
 		mpl3115a2::info();
-	}
-
-	/*
-	 * Perform MSL pressure calibration given an altitude in metres
-	 */
-	if (!strcmp(verb, "calibrate")) {
-		if (argc < 2) {
-			errx(1, "missing altitude");
-		}
-
-		long altitude = strtol(argv[myoptind + 1], nullptr, 10);
-
-		mpl3115a2::calibrate(altitude, busid);
 	}
 
 	mpl3115a2::usage();

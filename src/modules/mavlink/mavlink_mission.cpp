@@ -43,16 +43,17 @@
 #include "mavlink_mission.h"
 #include "mavlink_main.h"
 
-#include <errno.h>
-#include <math.h>
-#include <lib/geo/geo.h>
+#include <lib/ecl/geo/geo.h>
 #include <systemlib/err.h>
 #include <drivers/drv_hrt.h>
 #include <px4_defines.h>
-
+#include <mathlib/mathlib.h>
+#include <matrix/math.hpp>
 #include <navigator/navigation.h>
 #include <uORB/topics/mission.h>
 #include <uORB/topics/mission_result.h>
+
+using matrix::wrap_2pi;
 
 dm_item_t MavlinkMissionManager::_dataman_id = DM_KEY_WAYPOINTS_OFFBOARD_0;
 bool MavlinkMissionManager::_dataman_init = false;
@@ -367,7 +368,7 @@ MavlinkMissionManager::send_mission_item(uint8_t sysid, uint8_t compid, uint16_t
 		_time_last_sent = hrt_absolute_time();
 
 		if (_int_mode) {
-			mavlink_mission_item_int_t wp;
+			mavlink_mission_item_int_t wp = {};
 			format_mavlink_mission_item(&mission_item, reinterpret_cast<mavlink_mission_item_t *>(&wp));
 
 			wp.target_system = sysid;
@@ -380,7 +381,7 @@ MavlinkMissionManager::send_mission_item(uint8_t sysid, uint8_t compid, uint16_t
 			PX4_DEBUG("WPM: Send MISSION_ITEM_INT seq %u to ID %u", wp.seq, wp.target_system);
 
 		} else {
-			mavlink_mission_item_t wp;
+			mavlink_mission_item_t wp = {};
 			format_mavlink_mission_item(&mission_item, &wp);
 
 			wp.target_system = sysid;
@@ -479,6 +480,11 @@ MavlinkMissionManager::send_mission_item_reached(uint16_t seq)
 void
 MavlinkMissionManager::send(const hrt_abstime now)
 {
+	// do not send anything over high latency communication
+	if (_mavlink->get_mode() == Mavlink::MAVLINK_MODE_IRIDIUM) {
+		return;
+	}
+
 	bool updated = false;
 	orb_check(_mission_result_sub, &updated);
 
@@ -529,20 +535,6 @@ MavlinkMissionManager::send(const hrt_abstime now)
 
 		// try to request item again after timeout
 		send_mission_request(_transfer_partner_sysid, _transfer_partner_compid, _transfer_seq);
-
-	} else if (_state == MAVLINK_WPM_STATE_SENDLIST && (_time_last_sent > 0)
-		   && hrt_elapsed_time(&_time_last_sent) > MAVLINK_MISSION_RETRY_TIMEOUT_DEFAULT) {
-
-		if (_transfer_seq == 0) {
-			/* try to send items count again after timeout */
-			send_mission_count(_transfer_partner_sysid, _transfer_partner_compid, _transfer_count, _mission_type);
-
-		} else {
-			/* try to send item again after timeout */
-			PX4_DEBUG("WPM: item re-send timeout");
-
-			send_mission_item(_transfer_partner_sysid, _transfer_partner_compid, _transfer_seq - 1);
-		}
 
 	} else if (_state != MAVLINK_WPM_STATE_IDLE && (_time_last_recv > 0)
 		   && hrt_elapsed_time(&_time_last_recv) > MAVLINK_MISSION_PROTOCOL_TIMEOUT_DEFAULT) {
@@ -634,12 +626,20 @@ MavlinkMissionManager::handle_mission_ack(const mavlink_message_t *msg)
 
 			} else if (_state == MAVLINK_WPM_STATE_GETLIST) {
 
-				// INT mode is not supported
-				if (_int_mode && wpa.type != MAV_MISSION_ACCEPTED) {
-					_int_mode = false;
+				// INT or float mode is not supported
+				if (wpa.type == MAV_MISSION_UNSUPPORTED) {
+
+					if (_int_mode) {
+						_int_mode = false;
+						send_mission_request(_transfer_partner_sysid, _transfer_partner_compid, _transfer_seq);
+
+					} else {
+						_int_mode = true;
+						send_mission_request(_transfer_partner_sysid, _transfer_partner_compid, _transfer_seq);
+					}
 
 				} else if (wpa.type != MAV_MISSION_ACCEPTED) {
-					_int_mode = true;
+					PX4_WARN("Mission ack result was %d", wpa.type);
 				}
 			}
 
@@ -942,6 +942,8 @@ MavlinkMissionManager::handle_mission_count(const mavlink_message_t *msg)
 				PX4_DEBUG("WPM: MISSION_COUNT ERROR: busy, already receiving seq %u", _transfer_seq);
 
 				_mavlink->send_statustext_critical("WPM: REJ. CMD: Busy");
+
+				send_mission_ack(_transfer_partner_sysid, _transfer_partner_compid, MAV_MISSION_ERROR);
 				return;
 			}
 
@@ -949,6 +951,7 @@ MavlinkMissionManager::handle_mission_count(const mavlink_message_t *msg)
 			PX4_DEBUG("WPM: MISSION_COUNT ERROR: busy, state %i", _state);
 
 			_mavlink->send_statustext_critical("WPM: IGN MISSION_COUNT: Busy");
+			send_mission_ack(_transfer_partner_sysid, _transfer_partner_compid, MAV_MISSION_ERROR);
 			return;
 		}
 
@@ -1007,7 +1010,8 @@ MavlinkMissionManager::handle_mission_item_both(const mavlink_message_t *msg)
 	if (CHECK_SYSID_COMPID_MISSION(wp)) {
 
 		if (wp.mission_type != _mission_type) {
-			PX4_WARN("WPM: Unexpected mission type (%u %u)", wp.mission_type, _mission_type);
+			PX4_WARN("WPM: Unexpected mission type (%u %u)", (int)wp.mission_type, (int)_mission_type);
+			send_mission_ack(_transfer_partner_sysid, _transfer_partner_compid, MAV_MISSION_ERROR);
 			return;
 		}
 
@@ -1017,20 +1021,31 @@ MavlinkMissionManager::handle_mission_item_both(const mavlink_message_t *msg)
 			if (wp.seq != _transfer_seq) {
 				PX4_DEBUG("WPM: MISSION_ITEM ERROR: seq %u was not the expected %u", wp.seq, _transfer_seq);
 
-				/* don't send request here, it will be performed in eventloop after timeout */
+				/* request next item again */
+				send_mission_request(_transfer_partner_sysid, _transfer_partner_compid, _transfer_seq);
 				return;
 			}
 
 		} else if (_state == MAVLINK_WPM_STATE_IDLE) {
-			PX4_DEBUG("WPM: MISSION_ITEM ERROR: no transfer");
+			if (_transfer_seq == wp.seq + 1) {
+				// Assume this is a duplicate, where we already successfully got all mission items,
+				// but the GCS did not receive the last ack and sent the same item again
+				send_mission_ack(_transfer_partner_sysid, _transfer_partner_compid, MAV_MISSION_ACCEPTED);
 
-			_mavlink->send_statustext_critical("IGN MISSION_ITEM: No transfer");
+			} else {
+				PX4_DEBUG("WPM: MISSION_ITEM ERROR: no transfer");
+
+				_mavlink->send_statustext_critical("IGN MISSION_ITEM: No transfer");
+				send_mission_ack(_transfer_partner_sysid, _transfer_partner_compid, MAV_MISSION_ERROR);
+			}
+
 			return;
 
 		} else {
 			PX4_DEBUG("WPM: MISSION_ITEM ERROR: busy, state %i", _state);
 
 			_mavlink->send_statustext_critical("IGN MISSION_ITEM: Busy");
+			send_mission_ack(_transfer_partner_sysid, _transfer_partner_compid, MAV_MISSION_ERROR);
 			return;
 		}
 
@@ -1306,13 +1321,13 @@ MavlinkMissionManager::parse_mavlink_mission_item(const mavlink_mission_item_t *
 			mission_item->nav_cmd = NAV_CMD_WAYPOINT;
 			mission_item->time_inside = mavlink_mission_item->param1;
 			mission_item->acceptance_radius = mavlink_mission_item->param2;
-			mission_item->yaw = _wrap_pi(mavlink_mission_item->param4 * M_DEG_TO_RAD_F);
+			mission_item->yaw = wrap_2pi(math::radians(mavlink_mission_item->param4));
 			break;
 
 		case MAV_CMD_NAV_LOITER_UNLIM:
 			mission_item->nav_cmd = NAV_CMD_LOITER_UNLIMITED;
 			mission_item->loiter_radius = mavlink_mission_item->param3;
-			mission_item->yaw = _wrap_pi(mavlink_mission_item->param4 * M_DEG_TO_RAD_F);
+			mission_item->yaw = wrap_2pi(math::radians(mavlink_mission_item->param4));
 			break;
 
 		case MAV_CMD_NAV_LOITER_TIME:
@@ -1320,19 +1335,22 @@ MavlinkMissionManager::parse_mavlink_mission_item(const mavlink_mission_item_t *
 			mission_item->time_inside = mavlink_mission_item->param1;
 			mission_item->loiter_radius = mavlink_mission_item->param3;
 			mission_item->loiter_exit_xtrack = (mavlink_mission_item->param4 > 0);
+			// Yaw is only valid for multicopter but we set it always because
+			// it's just ignored for fixedwing.
+			mission_item->yaw = wrap_2pi(math::radians(mavlink_mission_item->param4));
 			break;
 
 		case MAV_CMD_NAV_LAND:
 			mission_item->nav_cmd = NAV_CMD_LAND;
 			// TODO: abort alt param1
-			mission_item->yaw = _wrap_pi(mavlink_mission_item->param4 * M_DEG_TO_RAD_F);
+			mission_item->yaw = wrap_2pi(math::radians(mavlink_mission_item->param4));
 			mission_item->land_precision = mavlink_mission_item->param2;
 			break;
 
 		case MAV_CMD_NAV_TAKEOFF:
 			mission_item->nav_cmd = NAV_CMD_TAKEOFF;
 			mission_item->pitch_min = mavlink_mission_item->param1;
-			mission_item->yaw = _wrap_pi(mavlink_mission_item->param4 * M_DEG_TO_RAD_F);
+			mission_item->yaw = wrap_2pi(math::radians(mavlink_mission_item->param4));
 			break;
 
 		case MAV_CMD_NAV_LOITER_TO_ALT:
@@ -1348,9 +1366,11 @@ MavlinkMissionManager::parse_mavlink_mission_item(const mavlink_mission_item_t *
 				mission_item->nav_cmd = NAV_CMD_DO_SET_ROI;
 				mission_item->params[0] = MAV_ROI_LOCATION;
 
-				mission_item->params[4] = mavlink_mission_item->x;
-				mission_item->params[5] = mavlink_mission_item->y;
 				mission_item->params[6] = mavlink_mission_item->z;
+
+			} else if ((int)mavlink_mission_item->param1 == MAV_ROI_NONE) {
+				mission_item->nav_cmd = NAV_CMD_DO_SET_ROI;
+				mission_item->params[0] = MAV_ROI_NONE;
 
 			} else {
 				return MAV_MISSION_INVALID_PARAM1;
@@ -1358,10 +1378,15 @@ MavlinkMissionManager::parse_mavlink_mission_item(const mavlink_mission_item_t *
 
 			break;
 
+		case MAV_CMD_DO_SET_ROI_LOCATION:
+			mission_item->nav_cmd = NAV_CMD_DO_SET_ROI_LOCATION;
+			mission_item->params[6] = mavlink_mission_item->z;
+			break;
+
 		case MAV_CMD_NAV_VTOL_TAKEOFF:
 		case MAV_CMD_NAV_VTOL_LAND:
 			mission_item->nav_cmd = (NAV_CMD)mavlink_mission_item->command;
-			mission_item->yaw = _wrap_pi(mavlink_mission_item->param4 * M_DEG_TO_RAD_F);
+			mission_item->yaw = wrap_2pi(math::radians(mavlink_mission_item->param4));
 			break;
 
 		case MAV_CMD_NAV_FENCE_RETURN_POINT:
@@ -1445,6 +1470,8 @@ MavlinkMissionManager::parse_mavlink_mission_item(const mavlink_mission_item_t *
 		case MAV_CMD_DO_VTOL_TRANSITION:
 		case MAV_CMD_NAV_DELAY:
 		case MAV_CMD_NAV_RETURN_TO_LAUNCH:
+		case MAV_CMD_DO_SET_ROI_WPNEXT_OFFSET:
+		case MAV_CMD_DO_SET_ROI_NONE:
 			mission_item->nav_cmd = (NAV_CMD)mavlink_mission_item->command;
 			break;
 
@@ -1533,8 +1560,8 @@ MavlinkMissionManager::format_mavlink_mission_item(const struct mission_item_s *
 			mavlink_mission_item_int_t *item_int =
 				reinterpret_cast<mavlink_mission_item_int_t *>(mavlink_mission_item);
 
-			item_int->x = (int32_t)(mission_item->lat * 1e7);
-			item_int->y = (int32_t)(mission_item->lon * 1e7);
+			item_int->x = std::round(mission_item->lat * 1e7);
+			item_int->y = std::round(mission_item->lon * 1e7);
 
 		} else {
 			mavlink_mission_item->x = (float)mission_item->lat;
@@ -1564,12 +1591,12 @@ MavlinkMissionManager::format_mavlink_mission_item(const struct mission_item_s *
 		case NAV_CMD_WAYPOINT:
 			mavlink_mission_item->param1 = mission_item->time_inside;
 			mavlink_mission_item->param2 = mission_item->acceptance_radius;
-			mavlink_mission_item->param4 = mission_item->yaw * M_RAD_TO_DEG_F;
+			mavlink_mission_item->param4 = math::degrees(mission_item->yaw);
 			break;
 
 		case NAV_CMD_LOITER_UNLIMITED:
 			mavlink_mission_item->param3 = mission_item->loiter_radius;
-			mavlink_mission_item->param4 = mission_item->yaw * M_RAD_TO_DEG_F;
+			mavlink_mission_item->param4 = math::degrees(mission_item->yaw);
 			break;
 
 		case NAV_CMD_LOITER_TIME_LIMIT:
@@ -1580,12 +1607,13 @@ MavlinkMissionManager::format_mavlink_mission_item(const struct mission_item_s *
 
 		case NAV_CMD_LAND:
 			// TODO: param1 abort alt
-			mavlink_mission_item->param4 = mission_item->yaw * M_RAD_TO_DEG_F;
+			mavlink_mission_item->param2 = mission_item->land_precision;
+			mavlink_mission_item->param4 = math::degrees(mission_item->yaw);
 			break;
 
 		case NAV_CMD_TAKEOFF:
 			mavlink_mission_item->param1 = mission_item->pitch_min;
-			mavlink_mission_item->param4 = mission_item->yaw * M_RAD_TO_DEG_F;
+			mavlink_mission_item->param4 = math::degrees(mission_item->yaw);
 			break;
 
 		case NAV_CMD_LOITER_TO_ALT:
@@ -1596,7 +1624,7 @@ MavlinkMissionManager::format_mavlink_mission_item(const struct mission_item_s *
 
 		case MAV_CMD_NAV_VTOL_TAKEOFF:
 		case MAV_CMD_NAV_VTOL_LAND:
-			mavlink_mission_item->param4 = mission_item->yaw * M_RAD_TO_DEG_F;
+			mavlink_mission_item->param4 = math::degrees(mission_item->yaw);
 			break;
 
 		case MAV_CMD_NAV_FENCE_RETURN_POINT:
@@ -1627,6 +1655,11 @@ MavlinkMissionManager::format_mavlink_mission_item(const struct mission_item_s *
 
 void MavlinkMissionManager::check_active_mission()
 {
+	// do not send anything over high latency communication
+	if (_mavlink->get_mode() == Mavlink::MAVLINK_MODE_IRIDIUM) {
+		return;
+	}
+
 	if (!(_my_dataman_id == _dataman_id)) {
 		PX4_DEBUG("WPM: New mission detected (possibly over different Mavlink instance) Updating");
 

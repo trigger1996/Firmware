@@ -34,42 +34,41 @@
 #ifndef COMMANDER_HPP_
 #define COMMANDER_HPP_
 
-#include <controllib/blocks.hpp>
+#include "state_machine_helper.h"
+#include "failure_detector/FailureDetector.hpp"
+
+#include <lib/controllib/blocks.hpp>
+#include <lib/mathlib/mathlib.h>
 #include <px4_module.h>
+#include <px4_module_params.h>
+#include <systemlib/hysteresis/hysteresis.h>
 
 // publications
 #include <uORB/Publication.hpp>
 #include <uORB/topics/actuator_armed.h>
 #include <uORB/topics/home_position.h>
-#include <uORB/topics/vehicle_command_ack.h>
-#include <uORB/topics/vehicle_control_mode.h>
 #include <uORB/topics/vehicle_status.h>
-#include <uORB/topics/vehicle_status_flags.h>
 
 // subscriptions
 #include <uORB/Subscription.hpp>
-#include <uORB/topics/geofence_result.h>
+#include <uORB/topics/estimator_status.h>
+#include <uORB/topics/iridiumsbd_status.h>
 #include <uORB/topics/mission_result.h>
-#include <uORB/topics/safety.h>
-#include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/vehicle_command.h>
 #include <uORB/topics/vehicle_global_position.h>
 #include <uORB/topics/vehicle_local_position.h>
-
-using control::BlockParamFloat;
-using control::BlockParamInt;
+#include <uORB/topics/telemetry_status.h>
+using math::constrain;
 using uORB::Publication;
 using uORB::Subscription;
 
-class Commander : public control::SuperBlock, public ModuleBase<Commander>
+using namespace time_literals;
+
+class Commander : public ModuleBase<Commander>, public ModuleParams
 {
 public:
-	Commander() :
-		SuperBlock(nullptr, "COM"),
-		_mission_result_sub(ORB_ID(mission_result), 0, 0, &getSubscriptions())
-	{
-		updateParams();
-	}
+	Commander();
+	~Commander();
 
 	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);
@@ -88,22 +87,130 @@ public:
 
 	void enable_hil();
 
+	// TODO: only temporarily static until low priority thread is removed
+	static bool preflight_check(bool report);
+
 private:
 
-	// Subscriptions
-	Subscription<mission_result_s> _mission_result_sub;
+	DEFINE_PARAMETERS(
 
-	bool handle_command(vehicle_status_s *status, const safety_s *safety, vehicle_command_s *cmd,
-			    actuator_armed_s *armed, home_position_s *home, vehicle_global_position_s *global_pos,
-			    vehicle_local_position_s *local_pos, vehicle_attitude_s *attitude, orb_advert_t *home_pub,
+		(ParamInt<px4::params::NAV_DLL_ACT>) _datalink_loss_action,
+		(ParamInt<px4::params::COM_DL_LOSS_T>) _datalink_loss_threshold,
+
+		(ParamInt<px4::params::COM_HLDL_LOSS_T>) _high_latency_datalink_loss_threshold,
+		(ParamInt<px4::params::COM_HLDL_REG_T>) _high_latency_datalink_regain_threshold,
+
+		(ParamInt<px4::params::NAV_RCL_ACT>) _rc_loss_action,
+		(ParamFloat<px4::params::COM_RC_LOSS_T>) _rc_loss_threshold,
+
+		(ParamFloat<px4::params::COM_HOME_H_T>) _home_eph_threshold,
+		(ParamFloat<px4::params::COM_HOME_V_T>) _home_epv_threshold,
+
+		(ParamFloat<px4::params::COM_POS_FS_EPH>) _eph_threshold,
+		(ParamFloat<px4::params::COM_POS_FS_EPV>) _epv_threshold,
+		(ParamFloat<px4::params::COM_VEL_FS_EVH>) _evh_threshold,
+
+		(ParamInt<px4::params::COM_POS_FS_DELAY>) _failsafe_pos_delay,
+		(ParamInt<px4::params::COM_POS_FS_PROB>) _failsafe_pos_probation,
+		(ParamInt<px4::params::COM_POS_FS_GAIN>) _failsafe_pos_gain,
+
+		(ParamInt<px4::params::COM_LOW_BAT_ACT>) _low_bat_action,
+		(ParamFloat<px4::params::COM_DISARM_LAND>) _disarm_when_landed_timeout,
+
+		(ParamInt<px4::params::COM_OBS_AVOID>) _obs_avoid
+	)
+
+	const int64_t POSVEL_PROBATION_MIN = 1_s;	/**< minimum probation duration (usec) */
+	const int64_t POSVEL_PROBATION_MAX = 100_s;	/**< maximum probation duration (usec) */
+
+	hrt_abstime	_last_gpos_fail_time_us{0};	/**< Last time that the global position validity recovery check failed (usec) */
+	hrt_abstime	_last_lpos_fail_time_us{0};	/**< Last time that the local position validity recovery check failed (usec) */
+	hrt_abstime	_last_lvel_fail_time_us{0};	/**< Last time that the local velocity validity recovery check failed (usec) */
+
+	// Probation times for position and velocity validity checks to pass if failed
+	hrt_abstime	_gpos_probation_time_us = POSVEL_PROBATION_MIN;
+	hrt_abstime	_lpos_probation_time_us = POSVEL_PROBATION_MIN;
+	hrt_abstime	_lvel_probation_time_us = POSVEL_PROBATION_MIN;
+
+	/* class variables used to check for navigation failure after takeoff */
+	hrt_abstime	_time_at_takeoff{0};		/**< last time we were on the ground */
+	hrt_abstime	_time_last_innov_pass{0};	/**< last time velocity or position innovations passed */
+	bool		_nav_test_passed{false};	/**< true if the post takeoff navigation test has passed */
+	bool		_nav_test_failed{false};	/**< true if the post takeoff navigation test has failed */
+
+	FailureDetector _failure_detector;
+	bool _failure_detector_termination_printed{false};
+
+	bool handle_command(vehicle_status_s *status, const vehicle_command_s &cmd, actuator_armed_s *armed,
 			    orb_advert_t *command_ack_pub, bool *changed);
 
-	bool set_home_position(orb_advert_t &homePub, home_position_s &home,
-				const vehicle_local_position_s &localPosition, const vehicle_global_position_s &globalPosition,
-				const vehicle_attitude_s &attitude, bool set_alt_only_to_lpos_ref);
+	bool set_home_position();
+	bool set_home_position_alt_only();
+
+	// Set the main system state based on RC and override device inputs
+	transition_result_t set_main_state(const vehicle_status_s &status, bool *changed);
+
+	// Enable override (manual reversion mode) on the system
+	transition_result_t set_main_state_override_on(const vehicle_status_s &status, bool *changed);
+
+	// Set the system main state based on the current RC inputs
+	transition_result_t set_main_state_rc(const vehicle_status_s &status, bool *changed);
+
+	void check_valid(const hrt_abstime &timestamp, const hrt_abstime &timeout, const bool valid_in, bool *valid_out,
+			 bool *changed);
+
+	bool check_posvel_validity(const bool data_valid, const float data_accuracy, const float required_accuracy,
+				   const hrt_abstime &data_timestamp_us, hrt_abstime *last_fail_time_us, hrt_abstime *probation_time_us, bool *valid_state,
+				   bool *validity_changed);
+
+	void reset_posvel_validity(bool *changed);
 
 	void mission_init();
 
+	void estimator_check(bool *status_changed);
+
+	void battery_status_check();
+
+	/**
+	 * Checks the status of all available data links and handles switching between different system telemetry states.
+	 */
+	void		data_link_check(bool &status_changed);
+
+	int		_telemetry_status_sub{-1};
+
+	hrt_abstime	_datalink_last_heartbeat_gcs{0};
+
+	hrt_abstime	_datalink_last_heartbeat_onboard_controller{0};
+	bool 				_onboard_controller_lost{false};
+
+	hrt_abstime	_datalink_last_heartbeat_avoidance_system{0};
+	bool				_avoidance_system_lost{false};
+	hrt_abstime	_avoidance_system_not_started{0};
+
+	bool		_avoidance_system_status_change{false};
+	uint8_t	_datalink_last_status_avoidance_system{telemetry_status_s::MAV_STATE_UNINIT};
+
+	int			_iridiumsbd_status_sub{-1};
+
+	hrt_abstime	_high_latency_datalink_heartbeat{0};
+	hrt_abstime	_high_latency_datalink_lost{0};
+
+	int _battery_sub{-1};
+	uint8_t _battery_warning{battery_status_s::BATTERY_WARNING_NONE};
+	float _battery_current{0.0f};
+
+	systemlib::Hysteresis	_auto_disarm_landed{false};
+	systemlib::Hysteresis	_auto_disarm_killed{false};
+
+	// Subscriptions
+	Subscription<estimator_status_s>		_estimator_status_sub{ORB_ID(estimator_status)};
+	Subscription<mission_result_s>			_mission_result_sub{ORB_ID(mission_result)};
+	Subscription<vehicle_global_position_s>		_global_position_sub{ORB_ID(vehicle_global_position)};
+	Subscription<vehicle_local_position_s>		_local_position_sub{ORB_ID(vehicle_local_position)};
+
+	Publication<home_position_s>			_home_pub{ORB_ID(home_position)};
+
+	orb_advert_t					_status_pub{nullptr};
 };
 
 #endif /* COMMANDER_HPP_ */

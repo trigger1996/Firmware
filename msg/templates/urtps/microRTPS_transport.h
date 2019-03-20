@@ -35,6 +35,7 @@
 #include <cstring>
 #include <arpa/inet.h>
 #include <poll.h>
+#include <termios.h>
 
 class Transport_node
 {
@@ -45,7 +46,23 @@ public:
 	virtual int init() {return 0;}
 	virtual uint8_t close() {return 0;}
 	ssize_t read(uint8_t *topic_ID, char out_buffer[], size_t buffer_len);
+
+	/**
+	 * write a buffer
+	 * @param topic_ID
+	 * @param buffer buffer to write: it must leave get_header_length() bytes free at the beginning. This will be
+	 *               filled with the header. length does not include get_header_length(). So buffer looks like this:
+	 *                -------------------------------------------------
+	 *               | header (leave free)          | payload data     |
+	 *               | get_header_length() bytes    | length bytes     |
+	 *                -------------------------------------------------
+	 * @param length buffer length excluding header length
+	 * @return length on success, <0 on error
+	 */
 	ssize_t write(const uint8_t topic_ID, char buffer[], size_t length);
+
+	/** Get the Length of struct Header to make headroom for the size of struct Header along with payload */
+	ssize_t get_header_length();
 
 protected:
 	virtual ssize_t node_read(void *buffer, size_t len) = 0;
@@ -83,6 +100,7 @@ protected:
 	ssize_t node_read(void *buffer, size_t len);
 	ssize_t node_write(void *buffer, size_t len);
 	bool fds_OK();
+	bool baudrate_to_speed(uint32_t bauds, speed_t *speed);
 
 	int uart_fd;
 	char uart_name[64] = {};
