@@ -45,7 +45,7 @@
         <arg name="respawn_gazebo" value="$(arg respawn_gazebo)"/>
     </include>
     <!-- MAVROS -->
-    <include file="/home/ghost/catkin_ws/src/px4_offboard_slam/Firmware/launch/px4_mavros.launch">
+    <include file="$(find mavros)/launch/px4.launch">
         <!-- GCS link is provided by SITL -->
         <arg name="gcs_url" value=""/>
         <arg name="fcu_url" value="$(arg fcu_url)"/>
